@@ -1,0 +1,12 @@
+wandb
+scikit-learn
+tqdm
+requests
+wget
+torch
+matplotlib
+tensorboardX
+transformers
+mowl-borg
+biopython
+camel-ai

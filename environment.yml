@@ -1,0 +1,10 @@
+name: kbagents
+channels:
+  - conda-forge
+dependencies:
+  - python=3.10
+  - click
+  - pandas
+  - pip
+  - pip:
+    - -r requirements.txt
