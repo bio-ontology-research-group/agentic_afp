@@ -5,12 +5,12 @@
 - Python 3.10
 - PyTorch
 - CAMEL-AI
-- BLAST
 
 ## Setup
 
 ```bash
 conda env create -f environment.yml
+conda activate agenticfp
 ```
 
 ## Run tests
@@ -20,17 +20,47 @@ pytest
 ```
 ## Usage
 
+Initially, we introduce a ProteinAgent, which takes initial GO
+function predictions and looks for potential overlooked terms in
+InterPro and Diamond. InterPro annotations and Diamond scores are used
+to increase initial prediction scores.
+
 ```bash
-python agents.py
+python predict.py
+python evaluate.py
 ```
 
-Example output:
+Example output of `predict.py`:
+```bash
+GO term: GO:0016020, Score: 0.7, Explanation: InterPro domain + Diamond 0.63 similarity
+```
+
+Example output of `evaluate.py`:
+```bash
+# INITIAL PREDICTIONS
+Computing Fmax
+agentic_go cc
+Fmax: 0.673, Smin: 8.654, threshold: 0.41, spec: 311
+Precision: 0.692, Recall: 0.655
+WFmax: 0.571, threshold: 0.3
+AUC: 0.932
+AUPR: 0.667
+AVGIC: 7.368
+
+# REFINED PREDICTIONS
+Number of prop annotations: 22
+Computing Fmax
+agentic_go cc
+Fmax: 0.688, Smin: 8.169, threshold: 0.49, spec: 318
+Precision: 0.729, Recall: 0.652
+WFmax: 0.588, threshold: 0.3
+AUC: 0.935
+AUPR: 0.680
+AVGIC: 7.259
 
 ```
-# Testing for GO:0110165
-Agent's interpretation: All of the top 10 similar proteins have the GO function GO:0110165. Therefore, the hypothesis is strongly supported by the data.
 
-# Testing for GO:0000000 (a dummy example)
-Agent's interpretation: Based on the UniProt search results, there is little evidence to support the hypothesized function GO:0000000 for the provided protein sequence. None of the top 10 similar proteins in UniProt have this GO function. Therefore, the analysis suggests that the hypothesized function is unlikely to be correct.
+# Details:
 
-```
+* Model used: `deepseek/deepseek-chat-v3-0324`
+* Protein agent is at: `agents/protein.py`
