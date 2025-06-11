@@ -1,4 +1,4 @@
-name: kbagents
+name: agenticfp
 channels:
   - conda-forge
 dependencies:
