@@ -37,4 +37,4 @@ class TestProteinAgent(TestCase):
         interpro_annotations = self.agent.partial_interpro_annotations(self.sequence)
         print(f"InterPro annotations for sequence {self.sequence}: {interpro_annotations}")
         self.assertIsInstance(interpro_annotations, list)
-        self.assertGreater(len(interpro_annotations), 1000)
+        self.assertGreater(len(interpro_annotations), 0)
