@@ -1,1 +1,1 @@
-from .diamond import ProteinAgent
+from .protein import ProteinAgent
