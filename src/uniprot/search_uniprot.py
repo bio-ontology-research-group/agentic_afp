@@ -425,7 +425,6 @@ def search_uniprot(protein_sequence: str, hypothesized_go_function:
 
 
 
-
 def validate_go_function(proteins: List[Dict], hypothesized_function: str) -> Dict:
     """Check which proteins have the hypothesized GO function"""
     validation_results = []

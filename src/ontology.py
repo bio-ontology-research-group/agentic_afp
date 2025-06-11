@@ -58,6 +58,7 @@ class Ontology(object):
         self.ic = None
         self.ic_norm = 0.0
         self.ancestors = {}
+        self.leaf_nodes = None
 
     def has_term(self, term_id):
         return term_id in self.ont
@@ -219,6 +220,22 @@ class Ontology(object):
                     q.append(ch_id)
         return term_set
 
+    def get_leaf_nodes(self, terms):
+        if self.leaf_nodes is not None:
+            return self.leaf_nodes
+        
+        leaf_nodes = set()
+    
+        for term in terms:
+            descendants = self.get_term_set(term)
+            if len(descendants) == 1 and term in descendants:
+                leaf_nodes.add(term)
+        self.leaf_nodes = leaf_nodes
+        return self.leaf_nodes
+    
+
+
+    
 def read_fasta(filename):
     seqs = list()
     info = list()
