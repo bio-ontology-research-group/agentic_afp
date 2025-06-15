@@ -8,6 +8,7 @@ import os
 from src.mlp_esm import DGPROModel, propagate_annots
 from agents import ProteinAgent
 from src.ontology import Ontology
+from src.utils import get_query_cost
 # from agents import ProteinAgent
 
 # OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
@@ -103,10 +104,11 @@ def main():
 
     
     with th.no_grad():
+        generation_ids = []
         for seq_no, (sequence, esm_embedding, seq_labels) in tqdm(enumerate(zip(test_sequences, test_features, test_labels)), total=len(test_sequences)):
 
-            # if seq_no != 0:
-                # continue
+            if seq_no == 20:
+                break
             
             esm_embedding = esm_embedding.to(device)
             seq_labels = seq_labels.to(device)
@@ -143,9 +145,12 @@ def main():
             while max_tries > 0:
                 max_tries -= 1
                 try:
-                    refined_logits = agent.step(prompt).msgs[0].content
+                    agent_output = agent.step(prompt)
+                    refined_logits = agent_output.msgs[0].content
                     agent.process_output(refined_logits)
                     final_logits = agent.predictions
+                    gen_id = agent_output.info['id']
+                    generation_ids.append(gen_id)
                     break
                 except Exception as e:
                     continue
@@ -161,7 +166,7 @@ def main():
             # sys.exit(0)
             final_preds.append(final_logits)
             agent.reset()
-            # break
+            
 
     logger.info("Prediction completed. Propagating annotations...")
     propagated_initial_preds = propagate_all_annotations(initial_preds, go, terms_dict)
@@ -169,7 +174,7 @@ def main():
     logger.info("Annotation propagation completed.")
 
     # get the dataframe with the first row only
-    # test_df = test_df.iloc[:1].copy()
+    test_df = test_df.iloc[:seq_no].copy()
     
     test_df['initial_preds'] = propagated_initial_preds
     test_df['final_preds'] = propagated_final_preds
@@ -177,6 +182,11 @@ def main():
     out_file = f'{data_root}/{ont}/predictions_{model_name}_{run}.pkl'
     test_df.to_pickle(out_file)
 
+    with open(f'{data_root}/{ont}/generation_ids_{model_name}_{run}.txt', 'w') as f:
+        for gen_id in generation_ids:
+            f.write(f"{gen_id}\n")
+
+    
 if __name__ == "__main__":
     main()
     logger.info("Done.")

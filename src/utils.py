@@ -8,6 +8,7 @@ import random
 import numpy as np
 import torch
 import os
+import requests
 
 BIOLOGICAL_PROCESS = 'GO:0008150'
 MOLECULAR_FUNCTION = 'GO:0003674'
@@ -178,3 +179,14 @@ class FastTensorDataLoader:
 
     def __len__(self):
         return self.n_batches
+
+
+
+def get_query_cost(gen_id: str, api_key: str) -> float:
+    url = f"https://openrouter.ai/api/v1/generation?id={gen_id}"
+    headers = {"Authorization": f"Bearer {api_key}"}
+    response = requests.get(url, headers=headers)
+    response.raise_for_status()
+    stats = response.json()
+    cost = stats["data"].get("total_cost")
+    return cost
