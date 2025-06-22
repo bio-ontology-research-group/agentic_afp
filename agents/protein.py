@@ -5,7 +5,7 @@ import ast
 # Add the project root directory to the Python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from src.diamond_retriever import get_diamond_score
+from agents.models import deepseek_model
 from src.hierarchy_retriever import retrieve_ancestor_scores
 from src.interpro_retriever import retrieve_interpro_annotations
 
@@ -26,94 +26,38 @@ logger.addHandler(handler)
 logger.setLevel(logging.INFO)
 
 
-
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-# OPENROUTER_API_KEY = os.getenv("OPENROUTER_FREE_API_KEY")
-
-# max_tokens = 20000
-max_tokens = 140000
-# max_tokens = 1000000
-
-# model_type="google/gemini-2.0-flash-001",
-model = ModelFactory.create(
-    model_platform=ModelPlatformType.OPENROUTER,
-    # model_type="deepseek/deepseek-chat-v3-0324:free",
-    # model_type="meta-llama/llama-3.3-8b-instruct:free",
-    model_type="google/gemini-2.0-flash-001",
-    api_key=OPENROUTER_API_KEY,
-    model_config_dict={"temperature": 0.3, "max_tokens": max_tokens},
-)
-
-
-class DiamondResponseFormat(BaseModel):
-    scores: List[Tuple[str, float]]  # List of tuples (GO term, score)
+DATA_ROOT = 'data_genome'
 
 
 class ProteinAgent(ChatAgent):
-    def __init__(self, ont, data_root, terms_dict, initial_predictions, *args, **kwargs):
-        self.go = Ontology(f"{data_root}/go-basic.obo", with_rels=True)
-        self.df = pd.read_pickle(f"{data_root}/{ont}/time_data_diam.pkl")
-        self.interpro_to_go = pd.read_csv(f"{data_root}/interpro2go.tsv", sep='\t')
+    def __init__(self, idx, data, terms_dict, initial_predictions, *args, **kwargs):
+        self.idx = idx
+        self.go = Ontology(f"{DATA_ROOT}/go.obo", with_rels=True)
+        self.data = data
+        self.interpro_to_go = pd.read_csv(f"{DATA_ROOT}/interpro2go.tsv", sep='\t')
 
         self.terms_dict = terms_dict
         self.predictions = initial_predictions
 
-
+        self.sequence = self.data['sequences'].values[idx]
+        self.interpros = self.get_interpro_annotations()
         
-        diamond_tool = FunctionTool(self.partial_get_diamond_score)
+        diamond_tool = FunctionTool(self.get_diamond_score)
         hierarchy_tool = FunctionTool(self.partial_retrieve_ancestor_scores)
-        interpro_tool = FunctionTool(self.partial_interpro_annotations)
+        interpro_tool = FunctionTool(self.is_in_interpro)
         score_query_tool = FunctionTool(self.query_score)
 
+        context = f"""You are a GO annotation curator that refines GO
+term predictions by revising external information of a protein
+sequence such as the interpro annotations or diamon score
+similarity. You operate in this way: you are given a term and you need
+to check (1) if the term is in the interpro annotations, (2) the
+diamond score for the term. You will be asked to increase or decrease
+the score of the term based on the information you have access to.  """
         
-        if ont == 'mf':
-            self.long_ont = 'Molecular Function'
-        elif ont == 'bp':
-            self.long_ont = 'Biological Process'
-        elif ont == 'cc':
-            self.long_ont = 'Cellular Component'
-        else:
-            raise ValueError(f"Unknown ontology: {ont}")
+        super().__init__(*args, system_message=context, tools=[diamond_tool, interpro_tool, score_query_tool], model=deepseek_model, **kwargs)
 
-
-        
-        context = f"""
-
-You are a GO annotation curator that improves prediction recall by identifying missed annotations from InterPro evidence.
-Core Task
-Find GO terms from InterPro that weren't initially predicted, validate with Diamond similarity, and boost scores for high-confidence matches.
-Process
-
-Extract InterPro GO terms - these are high-confidence annotations
-Check Diamond scores for InterPro terms (>0.7 = strong support)
-Compare with initial predictions - focus on missed terms
-Boost scores when InterPro + Diamond agree but initial prediction missed/underscored
-
-Scoring Logic
-
-InterPro + Diamond >0.7: Score 0.8-0.9
-InterPro + Diamond 0.5-0.7: Score 0.6-0.8
-InterPro only: Score 0.5-0.7
-Conflicts: Use InterPro evidence, score 0.4-0.6
-
-Output Format
-[("GO:XXXXXXX", score, "InterPro domain IPR### + Diamond 0.XX similarity")]
-Only output terms where you're changing/adding annotations - focus on recall improvement.
-"""
-        
-        super().__init__(*args, system_message=context, tools=[diamond_tool, interpro_tool, score_query_tool], model=model, **kwargs)
-
-    def partial_get_diamond_score(self, sequence: str, hypothesis_function: str):
-        """
-        Retrieve the diamond score for a given sequence and hypothesis function.
-        Args:
-            sequence (str): The protein sequence to analyze.
-            hypothesis_function (str): The GO term representing the hypothesized function.
-        Returns:
-            float: The diamond score for the given sequence and hypothesis function.
-        """
-        return get_diamond_score(sequence, hypothesis_function, self.df)
-
+            
     def partial_retrieve_ancestor_scores(self, go_term: str) -> List[Tuple[str, float]]:
         """
         Retrieve scores for ancestors of a given GO term.
@@ -124,7 +68,7 @@ Only output terms where you're changing/adding annotations - focus on recall imp
         """
         return retrieve_ancestor_scores(go_term, self.go, self.terms_dict, self.predictions)
 
-    def partial_interpro_annotations(self, sequence: str) -> list:
+    def get_interpro_annotations(self) -> list:
         """
         Retrieve InterPro annotations for a given sequence.
         Args:
@@ -133,7 +77,7 @@ Only output terms where you're changing/adding annotations - focus on recall imp
             list: A list of GO terms associated with the sequence based on InterPro annotations.
         """
 
-        interpros = self.df[self.df['sequences'] == sequence]['interpros'].values[0]
+        interpros = self.data[self.data['sequences'] == self.sequence]['interpros'].values[0]
         gos = []
         for interpro in interpros:
             if interpro not in self.interpro_to_go['interpro_id'].values:
@@ -144,6 +88,34 @@ Only output terms where you're changing/adding annotations - focus on recall imp
         gos = list(set([go for go in gos if go in self.terms_dict]))  # Ensure unique GO terms and valid ones
             
         return gos
+
+    def is_in_interpro(self, go_term: str) -> bool:
+        """
+        Check if a GO term is associated with any InterPro annotations.
+        Args:
+            go_term (str): The GO term to check.
+        Returns:
+            bool: True if the GO term is associated with InterPro annotations, False otherwise.
+        """
+        return go_term in self.interpros
+
+    def get_diamond_score(self, go_term: str) -> float:
+        """
+        Retrieve the diamond score for a given sequence and hypothesis function.
+
+        Args:
+            go_term (str): The GO term to analyze.
+        Returns:
+            float: The diamond score for the given sequence and hypothesis function.
+    """
+    
+
+        preds = self.data[self.data['sequences'] == self.sequence]['preds'].values[0]
+
+        if go_term not in preds:
+            return 0.0
+        else:
+            return float(preds[go_term])
 
     def query_score(self, go_term: str) -> float:
         """
