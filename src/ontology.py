@@ -117,6 +117,7 @@ class Ontology(object):
                     obj['regulates'] = list()
                     obj['alt_ids'] = list()
                     obj['is_obsolete'] = False
+                    obj['definition'] = None
                     continue
                 elif line == '[Typedef]':
                     if obj is not None:
@@ -142,6 +143,14 @@ class Ontology(object):
                         obj['name'] = l[1]
                     elif l[0] == 'is_obsolete' and l[1] == 'true':
                         obj['is_obsolete'] = True
+                    elif l[0] == 'def':
+                        def_text = l[1]
+                        if def_text.startswith('"') and '"' in def_text[1:]:
+                            end_quote = def_text.find('"', 1)
+                            obj['definition'] = def_text[1:end_quote]
+                        else:
+                            obj['definition'] = def_text
+
             if obj is not None:
                 ont[obj['id']] = obj
         for term_id in list(ont.keys()):
@@ -233,7 +242,56 @@ class Ontology(object):
         self.leaf_nodes = leaf_nodes
         return self.leaf_nodes
     
+    def get_term_name(self, term_id):
+        """
+        Get the human-readable name/label of a GO term.
 
+        Args:
+            term_id (str): The GO term ID (e.g., 'GO:0008150')
+
+        Returns:
+            str: The name/label of the term, or None if term doesn't exist
+        """
+        if self.has_term(term_id):
+            return self.ont[term_id].get('name', None)
+        return None
+
+    def get_term_definition(self, term_id):
+        """
+        Get the definition of a GO term.
+
+        Args:
+            term_id (str): The GO term ID (e.g., 'GO:0008150')
+
+        Returns:
+            str: The definition of the term, or None if term doesn't exist or has no definition
+        """
+        if self.has_term(term_id):
+            return self.ont[term_id].get('definition', None)
+        return None
+
+    
+    def get_term_info(self, term_id):
+        """
+        Get comprehensive information about a GO term including name, namespace, etc.
+
+        Args:
+            term_id (str): The GO term ID (e.g., 'GO:0008150')
+
+        Returns:
+            dict: Dictionary containing term information, or None if term doesn't exist
+        """
+        if self.has_term(term_id):
+            term = self.ont[term_id]
+            return {
+                'id': term_id,
+                'name': term.get('name', 'Unknown'),
+                'namespace': term.get('namespace', 'Unknown'),
+                'parents': term.get('is_a', []),
+                'children': list(term.get('children', set())),
+                'alt_ids': term.get('alt_ids', [])
+            }
+        return None
 
     
 def read_fasta(filename):

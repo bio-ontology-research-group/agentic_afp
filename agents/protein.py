@@ -44,16 +44,18 @@ class ProteinAgent(ChatAgent):
         
         diamond_tool = FunctionTool(self.get_diamond_score)
         hierarchy_tool = FunctionTool(self.partial_retrieve_ancestor_scores)
-        interpro_tool = FunctionTool(self.is_in_interpro)
+        interpro_tool = FunctionTool(self.get_interpro_annotations)
         score_query_tool = FunctionTool(self.query_score)
 
         context = f"""You are a GO annotation curator that refines GO
 term predictions by revising external information of a protein
 sequence such as the interpro annotations or diamon score
 similarity. You operate in this way: you are given a term and you need
-to check (1) if the term is in the interpro annotations, (2) the
-diamond score for the term. You will be asked to increase or decrease
-the score of the term based on the information you have access to.  """
+to check (1) if the term is in the interpro annotations or if the
+definition is related to the definition of interpro annotations, (2)
+the diamond score for the term. You will be asked to increase or
+decrease the score of the term based on the information you have
+access to.  """
         
         super().__init__(*args, system_message=context, tools=[diamond_tool, interpro_tool, score_query_tool], model=deepseek_model, **kwargs)
 
@@ -74,7 +76,7 @@ the score of the term based on the information you have access to.  """
         Args:
             sequence (str): The protein sequence to analyze.
         Returns:
-            list: A list of GO terms associated with the sequence based on InterPro annotations.
+            list: A list of tuples containing GO term identifiers, names, and definitions.
         """
 
         interpros = self.data[self.data['sequences'] == self.sequence]['interpros'].values[0]
@@ -86,8 +88,9 @@ the score of the term based on the information you have access to.  """
             gos.extend(go_set)
 
         gos = list(set([go for go in gos if go in self.terms_dict]))  # Ensure unique GO terms and valid ones
-            
-        return gos
+        gos_info = [(term, self.go.get_term_name(term), self.go.get_term_definition(term)) for term in gos]
+        
+        return gos_info
 
     def is_in_interpro(self, go_term: str) -> bool:
         """
@@ -110,7 +113,7 @@ the score of the term based on the information you have access to.  """
     """
     
 
-        preds = self.data[self.data['sequences'] == self.sequence]['preds'].values[0]
+        preds = self.data[self.data['sequences'] == self.sequence]['diam_preds'].values[0]
 
         if go_term not in preds:
             return 0.0

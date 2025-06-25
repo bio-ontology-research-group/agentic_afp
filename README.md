@@ -64,3 +64,15 @@ AVGIC: 7.259
 
 * Model used: `deepseek/deepseek-chat-v3-0324`
 * Protein agent is at: `agents/protein.py`
+
+
+
+# Data
+
+To extend the `test.pkl` file with diamond predictions and uniprot text information run:
+
+```
+python diamond_preds.py
+python get_protein_uniprot_info.py
+
+```

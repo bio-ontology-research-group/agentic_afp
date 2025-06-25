@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 from src.ontology import Ontology
 from src.utils import FUNC_DICT, NAMESPACES
-from agents import ProteinAgent
+from agents import ProteinAgent, Heuristician
 from agents.models import deepseek_model
 from sklearn.metrics import roc_curve, auc
 import math
@@ -101,15 +101,26 @@ class CoordinatorAgent(ChatAgent):
         test_data_file = f'{self.data_root}/predictions/{model}_{run}.pkl'
         self.test_df = pd.read_pickle(test_data_file)
         self.terms_dict = load_data(self.data_root)
-
+        self.ontology = Ontology(f'{self.data_root}/go.obo', with_rels=True)
         self.protein_agents = []
 
         self.test_tool = FunctionTool(self.test)
-
-        context = f"""You are a coordinator agent responsible for managing multiple protein agents. All the proteins are part of the same genome. You have access to genome-level contraints. One type of constraint are essential functions, which for a given genome, the essential function should be present in at least one protein. Your job is to ensure that all the essential functions are covered by the predictions of the protein agents without sacrificing protein centric performance. This is a test run, so you will just run the ``test_tool`` to evaluate the protein-centric performance."""
-
+        self.tool_create_protein_agents = FunctionTool(self.create_protein_agents)
+        self.tool_query_protein_agents = FunctionTool(self.query_protein_agents)
+        self.tool_update_predictions = FunctionTool(self.update_predictions)
         
-        super().__init__(*args, system_message=context, tools=[self.test_tool], model=deepseek_model, **kwargs)
+        context = f"""You are a coordinator agent responsible for
+        managing multiple protein agents. All the proteins are part of
+        the same genome. You have access to genome-level
+        contraints. One type of constraint are essential functions,
+        which for a given genome, the essential function should be
+        present in at least one protein. Your job is to ensure that
+        all the essential functions are covered by the predictions of
+        the protein agents without sacrificing protein centric
+        performance."""
+        super().__init__(*args, system_message=context,
+                         tools=[self.tool_create_protein_agents, self.tool_query_protein_agents, self.tool_update_predictions], model=deepseek_model,
+                         **kwargs)
 
     def create_protein_agent(self, idx: int) -> ProteinAgent:
         """
@@ -122,10 +133,34 @@ class CoordinatorAgent(ChatAgent):
         """
         row = self.test_df.iloc[idx]
         predictions = row['preds']
-        
         return ProteinAgent(idx, self.test_df, self.terms_dict, predictions)
+
+    def create_protein_agents(self, idxs):
+        """
+        Create protein agents for a list of indices.
+        Args:
+            idxs (list): List of indices for which to create protein agents.
+        """
+        for idx in idxs:
+            protein_agent = self.create_protein_agent(idx)
+            self.protein_agents.append(protein_agent)
         
-        
+
+    def query_protein_agents(self, go_term):
+        """
+        Query all protein agents for a specific GO term.
+        Args:
+            go_term (str): The GO term to query.
+        Returns:
+            list: A list of responses from each protein agent.
+        """
+        prompt = f"""Please provide your response to the following GO term query: {go_term}. Analyze it usingyour knowledge and the information you have about the proteins."""
+        responses = []
+        for agent in self.protein_agents:
+            response = agent.step(prompt).msgs[0].content
+            responses.append(response)
+        return responses
+            
     def retrieve_predictions(self) -> np.ndarray:
         """
         Retrieve predictions from all protein agents.
@@ -135,17 +170,21 @@ class CoordinatorAgent(ChatAgent):
         predictions = np.array(self.test_df['preds'].tolist())
         return predictions
 
-    def update_predictions(self, protein_agent):
+    def update_predictions(self, idx, go_term, new_score):
         """
         Update the predictions of a specific protein agent.
         Args:
-            protein_agent (ChatAgent): The protein agent whose predictions need to be updated.
+            idx (int): The index of the protein agent to update.
+            go_term (str): The GO term identifier to update.
+            new_score (float): The new score to assign to the GO term.
         """
         # Retrieve the latest predictions from the agent
-        idx = protein_agent.idx
-        latest_predictions = protein_agent.predictions
-        self.test_df.at[idx, 'preds'] = latest_predictions
-
+        go_id = self.terms_dict[go_term]
+        predictions = self.test_df.preds.tolist()[idx]
+        predictions[go_id] = new_score
+        self.test_df.preds[idx] = predictions
+        
+        
 
     def essential_function_step(self, term: str):
         """
@@ -153,36 +192,79 @@ class CoordinatorAgent(ChatAgent):
         Args:
             term (str): The essential function term to be covered.
         """
-        logger.debug(f"Ensuring essential function term '{term}' is covered by at least one protein agent.")
-        term_idx = self.terms_dict[term]
-        logger.debug(f"Term index for '{term}': {term_idx}")
-        predictions = self.retrieve_predictions()
-        predictions = enumerate(predictions)
-        top_ten = sorted(predictions, key=lambda x: x[1][term_idx], reverse=True)[:10]
-        agents = [self.create_protein_agent(idx) for idx, _ in top_ten]
+        try:
+            logger.debug(f"Ensuring essential function term '{term}' is covered by at least one protein agent.")
+            term_idx = self.terms_dict[term]
+            term_label = self.ontology.get_term_name(term)
+            term_definition = self.ontology.get_term_definition(term)
 
-        prompt = f"""You are given the GO term {term} which is an
-        essential function for the genome. Your task is to check if
-        the score for this term can be increased based on information
-        such as InterPro annotations, Diamond score and your
-        knowledge. Please provide your resolution in the form of
-        [initial score, new score, explanation]. If you cannot
-        increase the score, return [initial score, initial_score, "No
-        change"]."""
+            logger.debug(f"Term index for '{term}': {term_idx}")
+            predictions = self.retrieve_predictions()
+            predictions = enumerate(predictions)
+            # top_ten = sorted(predictions, key=lambda x: x[1][term_idx], reverse=True)[:100]
+            # agents = [self.create_protein_agent(idx) for idx, _ in top_ten]
 
-        reponses = []
-        for agent in agents:
-            response = agent.step(prompt).msgs[0].content
-            reponses.append((agent.idx, response))
+            prompt = f"""You are given the GO term {term}: {term_label} which is an
+            essential function for the genome. Your task is to check if
+            the score for this term can be increased based on information
+            such as InterPro annotations, Diamond score and your
+            knowledge. Please provide your resolution in the form of
+            ['initial score', 'new score', 'explanation']. If you cannot
+            increase the score, return ['initial score', 'initial_score', 'No
+            change'].
+            Term information:
+            GO Term: {term}
+            Term Label: {term_label}
+            Term Definition: {term_definition}
 
-        print(f"Responses from protein agents: {reponses}")
+            """
+
+            protein_definitions = enumerate(self.test_df['uniprot_text'].tolist())
+            protein_definitions = ", ".join([f'{idx}: {desc}' for idx, desc in protein_definitions])
+
+            heuristician_prompt = f"""The protein descriptions are:
+            {protein_definitions}. The function of interest is {term} with label {term_label} and
+            definition {term_definition}"""
+
+            heuristician = Heuristician()
+            heuristician_output = heuristician.step(heuristician_prompt).msgs[0].content
+
+            print(f"\n\n\nHeuristician output: {heuristician_output}")
+
+            coordinator_prompt = f"""You are a coordinator agent. You have
+            information that certain proteinns are plausible to be
+            annotated with the term {term}. The information is as follows:
+            '{heuristician_output}. Use the indices in the information to
+            create protein agents"""
+
+            general_response = self.step(coordinator_prompt).msgs[0].content
+            print(f"\n\n\nGeneral response from coordinator: {general_response}")
+
+            coordinator_prompt = f"""Please query the protein agents for the GO term {term} and return the responses."""
+            query_response = self.step(coordinator_prompt).msgs[0].content
+
+            print(f"\n\n\nQuery response: {query_response}")
+
+            # summary_prompt = f"""Please summarize the responses from the protein agents. The responses are as follows: {general_response}"""
+            # summary_response = self.step(summary_prompt).msgs[0].content
+
+            # print(f"\n\n\nSummary response: {summary_response}")
+
+            updating_prompt = f"""Please consider the responses from
+            the protein agents and choose the most plausible protein
+            agent id to update the score for the GO term {term}. The
+            responses are as follows: {general_response}. Update the
+            score for the GO term using the update_predictions
+            function."""
+
+            final_response = self.step(updating_prompt).msgs[0].content
+            print(f"\n\n\nFinal response: {final_response}")
+
             
-        coordinator_prompt = f"""You are a coordinator agent. You have received the following responses from the protein agents regarding the essential function {term}: {', '.join([f'Agent {idx}: {response}' for idx, response in reponses])}. Please decide which agent should update their predictions to ensure that the essential function is covered. Provide the response in the format: "[agent_idx, new_score]". If no agent needs to update, return "[]". """
             
-        response = self.step(coordinator_prompt).msgs[0].content
-        print(f"Coordinator response: {response}")
-
-        
+        except Exception as e:
+            logger.error(f"Error in essential function step: {e}")
+            return
         
     def test(self):
         """
