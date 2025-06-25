@@ -59,7 +59,7 @@ class Ontology(object):
         self.ic_norm = 0.0
         self.ancestors = {}
         self.leaf_nodes = None
-        
+        self._taxon_map = None
         # Load taxon constraints if file is provided
         if taxon_constraints_file:
             self.load_taxon_constraints(taxon_constraints_file)
@@ -219,7 +219,7 @@ class Ontology(object):
                     prop_parts = line.split(': ')[1].split()
                     if len(prop_parts) >= 2:
                         prop_type = prop_parts[0]
-                        taxon_id = prop_parts[1]
+                        taxon_id = prop_parts[1].split(':')[1]
                         
                         if current_term_id in self.ont:
                             if prop_type == 'RO:0002162':  # in_taxon
@@ -403,6 +403,38 @@ class Ontology(object):
                 'never_in_taxon': term.get('never_in_taxon', [])
             }
         return None
+
+    @property
+    def taxon_map(self):
+        """
+        Creates a dictionary where keys are taxon IDs and values are pairs of lists.
+        The first list contains GO terms that have an in_taxon constraint for that taxon.
+        The second list contains GO terms that have a never_in_taxon constraint for that taxon.
+        
+        Returns:
+            dict: Dictionary mapping taxon IDs to pairs of lists [in_taxon_terms, never_in_taxon_terms]
+        """
+        if self._taxon_map is not None:
+            return self._taxon_map
+
+        taxon_map = {}
+        
+        # Iterate through all terms in the ontology
+        for term_id, term in self.ont.items():
+            # Process in_taxon constraints
+            for taxon_id in term.get('in_taxon', []):
+                if taxon_id not in taxon_map:
+                    taxon_map[taxon_id] = [[], []]
+                taxon_map[taxon_id][0].append(term_id)
+                
+            # Process never_in_taxon constraints
+            for taxon_id in term.get('never_in_taxon', []):
+                if taxon_id not in taxon_map:
+                    taxon_map[taxon_id] = [[], []]
+                taxon_map[taxon_id][1].append(term_id)
+
+        self._taxon_map = taxon_map
+        return self._taxon_map
 
 
 def read_fasta(filename):
