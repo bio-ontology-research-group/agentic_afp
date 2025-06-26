@@ -395,6 +395,7 @@ class Ontology(object):
             return {
                 'id': term_id,
                 'name': term.get('name', 'Unknown'),
+                'definition': term.get('definition', 'No definition available'),
                 'namespace': term.get('namespace', 'Unknown'),
                 'parents': term.get('is_a', []),
                 'children': list(term.get('children', set())),
