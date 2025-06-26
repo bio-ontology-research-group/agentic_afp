@@ -163,8 +163,9 @@ access to.  """
             go_term (str): The GO term identifier to update.
             score (float): The new score for the GO term.
         """
-        go_id = self.terms_dict.get(go_term)
-        self.data_row['preds'][go_id] = score
+        if go_term in self.terms_dict:
+            go_id = self.terms_dict.get(go_term)
+            self.data_row['preds'][go_id] = score
 
 
 def test_diamond_agent():
