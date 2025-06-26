@@ -5,20 +5,20 @@ import numpy as np
 import pandas as pd
 import gzip
 import logging
-from utils import Ontology, is_exp_code, is_cafa_target, FUNC_DICT
+from ontology import Ontology, is_exp_code, is_cafa_target, FUNC_DICT
 import torch
 
 logging.basicConfig(level=logging.INFO)
 
 @ck.command()
 @ck.option(
-    '--swissprot-file', '-sf', default='data/uniprot_sprot_2023_03.dat.gz',
+    '--swissprot-file', '-sf', default='data/uniprot_sprot_2023_05.dat.gz',
     help='UniProt/SwissProt knowledgebase file in text format (archived)')
 @ck.option(
-    '--out-file', '-o', default='data/swissprot_exp_2023_03.pkl',
+    '--out-file', '-o', default='data/swissprot_exp_2023_05.pkl',
     help='Result file with a list of proteins, sequences and annotations')
 def main(swissprot_file, out_file):
-    go = Ontology('data/go-basic.obo', with_rels=True)
+    go = Ontology('data/go.obo', with_rels=True)
     proteins, accessions, sequences, annotations, string_ids, orgs, genes, interpros = load_data(swissprot_file)
     df = pd.DataFrame({
         'proteins': proteins,
