@@ -15,15 +15,15 @@ def main(data_root, ont):
     test_protein = 0
     
     for i in tqdm(range(number_of_proteins)):
-        coordinator.protein_step(test_protein, verbose=True)
+        coordinator.protein_step(i, verbose=True)
         new_test_df = coordinator.test_df
         new_test_df.to_pickle(output_file)
         print("__________________________________")
         coordinator.reset()
-        break
+        # break
     
 if __name__ == "__main__":
     data_root = 'data'
-    ont = 'mf'  # or 'bp', 'cc'
+    ont = 'cc'  # or 'bp', 'cc'
     main(data_root, ont)
     print("Done.")

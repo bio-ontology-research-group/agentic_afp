@@ -273,12 +273,13 @@ if __name__ == '__main__':
     data_root = 'data'
     ont = 'mf'  # or 'bp', 'cc'
 
-    combine = True
+    combine = False
     alpha = 0.5
     tex_output = False
     wandb_logger = FakeLogger() # Replace with actual wandb logger if needed
-    # test(data_root, ont, "mlp", "1", combine, alpha, tex_output, wandb_logger)
+    test(data_root, ont, "mlp", "1", combine, alpha, tex_output, wandb_logger)
     test(data_root, ont, "refined", "", combine, alpha, tex_output, wandb_logger)
+    test(data_root, ont, "refined_propagated", "", combine, alpha, tex_output, wandb_logger)
     
     
 
