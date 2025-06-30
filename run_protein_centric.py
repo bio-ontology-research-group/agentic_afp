@@ -2,17 +2,16 @@ import pandas as pd
 from tqdm import tqdm
 from agents import CoordinatorProteinCentricAgent
 
-
-
-def main(data_root, ont):
+import argparse
+def main(data_root, test):
     
-    output_file = f"{data_root}/{ont}/predictions_refined.pkl"
+    output_file = f"{data_root}/predictions_refined.pkl"
 
-    
-    
-    coordinator = CoordinatorProteinCentricAgent(ont)
+    coordinator = CoordinatorProteinCentricAgent()
     number_of_proteins = len(coordinator.test_df)
-    test_protein = 0
+    
+    if test:
+        number_of_proteins = 30
     
     for i in tqdm(range(number_of_proteins)):
         coordinator.protein_step(i, verbose=True)
@@ -23,7 +22,10 @@ def main(data_root, ont):
         # break
     
 if __name__ == "__main__":
-    data_root = 'data'
-    ont = 'cc'  # or 'bp', 'cc'
-    main(data_root, ont)
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--data_root', type=str, default='data')
+    parser.add_argument('--test', action='store_true')
+    args = parser.parse_args()
+
+    main(args.data_root, args.test)
     print("Done.")

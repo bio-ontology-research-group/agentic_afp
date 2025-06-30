@@ -13,16 +13,13 @@ from functools import partial
 from tqdm import tqdm
 import wandb
 sys.path.append('..')
-from evaluate_protein_centric import test
+from evaluate import test
 from src.ontology import Ontology
 from src.utils import FastTensorDataLoader
 
 @ck.command()
 @ck.option(
     '--data-root', '-dr', default='data',
-    help='Prediction model')
-@ck.option(
-    '--ont', '-ont', default='mf',
     help='Prediction model')
 @ck.option(
     '--model-name', '-mn', default='mlp',
@@ -39,22 +36,22 @@ from src.utils import FastTensorDataLoader
     '--device', '-d', default='cuda',
     help='Device')
 @ck.option('--run', '-r', default=1, help='Run number')
-def main(data_root, ont, model_name, batch_size, epochs, load, device, run):
+def main(data_root, model_name, batch_size, epochs, load, device, run):
 
-    name = f'{model_name}_{ont}_{run}'
+    name = f'{model_name}_{run}'
     group = f'protein_centric'
     wandb_logger = wandb.init(project='agentic-afp', name=name,
                               group=group)
 
-    go_file = f'{data_root}/go-basic.obo'
-    model_file = f'{data_root}/{ont}/{model_name}_{run}.th'
-    out_file = f'{data_root}/{ont}/predictions_{model_name}_{run}.pkl'
+    go_file = f'{data_root}/go.obo'
+    model_file = f'{data_root}/{model_name}_{run}.th'
+    out_file = f'{data_root}/predictions_{model_name}_{run}.pkl'
 
     go = Ontology(go_file, with_rels=True)
-    terms_dict, train_data, valid_data, test_data, test_df = load_data(data_root, ont)
+    terms_dict, train_data, valid_data, test_data, test_df = load_data(data_root)
     n_terms = len(terms_dict)
 
-    net = DGPROModel(5120, n_terms, device).to(device)
+    net = DGPROModel(n_terms, device).to(device)
 
     train_features, train_labels = train_data
     valid_features, valid_labels = valid_data
@@ -77,6 +74,7 @@ def main(data_root, ont, model_name, batch_size, epochs, load, device, run):
     best_fmax = 0
     tolerance = 5
     curr_tolerance = tolerance
+    
     if not load:
         print('Training the model')
         for epoch in range(epochs):
@@ -155,7 +153,7 @@ def main(data_root, ont, model_name, batch_size, epochs, load, device, run):
 
     with get_context("spawn").Pool(50) as p:
         results = []
-        with tqdm(total=len(preds)) as pbar:
+        with tqdm(total=len(preds), desc='Propagating annotations') as pbar:
             for output in p.imap_unordered(partial(propagate_annots, go=go, terms_dict=terms_dict), indexed_preds, chunksize=200):
                 results.append(output)
                 pbar.update()
@@ -166,7 +164,7 @@ def main(data_root, ont, model_name, batch_size, epochs, load, device, run):
 
     test_df['preds'] = preds
     test_df.to_pickle(out_file)
-    test(data_root, ont, model_name, run, False, 0, True, wandb_logger)
+    test(data_root, model_name, run, False, 0, True, wandb_logger)
     wandb_logger.finish()
 
 def propagate_annots(preds, go, terms_dict):
@@ -222,10 +220,10 @@ class MLPBlock(nn.Module):
 
 class DGPROModel(nn.Module):
 
-    def __init__(self, nb_iprs, nb_gos, device, nodes=[2048,]):
+    def __init__(self, nb_gos, device, nodes=[1024,]):
         super().__init__()
         self.nb_gos = nb_gos
-        input_length = 5120
+        input_length = 2560
         net = []
         for hidden_dim in nodes:
             net.append(MLPBlock(input_length, hidden_dim))
@@ -239,15 +237,17 @@ class DGPROModel(nn.Module):
         return self.net(features)
 
     
-def load_data(data_root, ont):
-    terms_df = pd.read_pickle(f'{data_root}/{ont}/terms.pkl')
-    terms = terms_df['gos'].values.flatten()
+def load_data(data_root):
+    terms_mf = pd.read_pickle(f'{data_root}/mf_terms.pkl')['terms'].values.flatten()
+    terms_cc = pd.read_pickle(f'{data_root}/cc_terms.pkl')['terms'].values.flatten()
+    terms_bp = pd.read_pickle(f'{data_root}/bp_terms.pkl')['terms'].values.flatten()
+    terms = sorted(set(terms_mf) | set(terms_cc) | set(terms_bp))
     terms_dict = {v: i for i, v in enumerate(terms)}
     print('Terms', len(terms))
-    
-    train_df = pd.read_pickle(f'{data_root}/{ont}/train_data.pkl')
-    valid_df = pd.read_pickle(f'{data_root}/{ont}/valid_data.pkl')
-    test_df = pd.read_pickle(f'{data_root}/{ont}/time_data_esm_diam.pkl')
+
+    train_df = pd.read_pickle(f'{data_root}/train_data.pkl')
+    valid_df = pd.read_pickle(f'{data_root}/valid_data.pkl')
+    test_df = pd.read_pickle(f'{data_root}/test_data_diam_with_text.pkl')
 
     train_data = get_data(train_df, terms_dict)
     valid_data = get_data(valid_df, terms_dict)
@@ -256,10 +256,10 @@ def load_data(data_root, ont):
     return terms_dict, train_data, valid_data, test_data, test_df
 
 def get_data(df, terms_dict):
-    data = th.zeros((len(df), 5120), dtype=th.float32)
+    data = th.zeros((len(df), 2560), dtype=th.float32)
     labels = th.zeros((len(df), len(terms_dict)), dtype=th.float32)
     for i, row in enumerate(df.itertuples()):
-        data[i, :] = th.FloatTensor(row.esm2)
+        data[i, :] = th.FloatTensor(row.esm2_data)
         if not hasattr(row, 'prop_annotations'):
             continue
         for go_id in row.prop_annotations:

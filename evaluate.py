@@ -15,40 +15,38 @@ from scipy import sparse
 import math
 from src.utils import FUNC_DICT, NAMESPACES, EXP_CODES
 from src.ontology import Ontology
-import wandb
 
 logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO)
 
 
-def main():
-    wandb_logger = wandb.init(project='agentic_afp', name="agentic_go_eval")
-
-    data_root = "data"
-    ont = "cc"
-    model = "agentic_go"
-    run = 1
-    test(data_root, ont, model, run, False, 0.5, "initial", False, wandb_logger=wandb_logger)
-    test(data_root, ont, model, run, False, 0.5, "final", False, wandb_logger=wandb_logger)
-    
-def test(data_root, ont, model, run, combine, alpha, prediction_type, tex_output, wandb_logger, ):
-    train_data_file = f'{data_root}/{ont}/train_data.pkl'
-    valid_data_file = f'{data_root}/{ont}/valid_data.pkl'
-    test_data_file = f'{data_root}/{ont}/predictions_{model}_{run}.pkl'
+def test(data_root, model, run, combine, alpha, tex_output, wandb_logger, rows=None):
+    train_data_file = f'{data_root}/train_data.pkl'
+    valid_data_file = f'{data_root}/valid_data.pkl'
+    test_data_file = f'{data_root}/predictions_{model}_{run}.pkl'
+    test_data_file = test_data_file.replace('_.pkl', f'.pkl')
     if combine:
-        diam_data_file = f'{data_root}/{ont}/time_data_diam.pkl'
+        diam_data_file = f'{data_root}/time_data_diam.pkl'
         diam_df = pd.read_pickle(diam_data_file)
 
-    terms_file = f'{data_root}/{ont}/terms.pkl'
-    go_rels = Ontology(f'{data_root}/go-basic.obo', with_rels=True)
-    terms_df = pd.read_pickle(terms_file)
-    terms = terms_df['gos'].values.flatten()
+
+    terms_mf = pd.read_pickle(f'{data_root}/mf_terms.pkl')['terms'].values.flatten()
+    terms_cc = pd.read_pickle(f'{data_root}/cc_terms.pkl')['terms'].values.flatten()
+    terms_bp = pd.read_pickle(f'{data_root}/bp_terms.pkl')['terms'].values.flatten()
+    terms = sorted(set(terms_mf) | set(terms_cc) | set(terms_bp))
     terms_dict = {v: i for i, v in enumerate(terms)}
 
+    go_rels = Ontology(f'{data_root}/go.obo', with_rels=True)
+            
     train_df = pd.read_pickle(train_data_file)
     valid_df = pd.read_pickle(valid_data_file)
     train_df = pd.concat([train_df, valid_df])
     test_df = pd.read_pickle(test_data_file)
-    
+
+    if rows is not None:
+        test_df = test_df.iloc[:rows]
+
+    print(f'Number of test samples: {len(test_df)}')
+        
     annotations = train_df['prop_annotations'].values
     annotations = list(map(lambda x: set(x), annotations))
     test_annotations = test_df['prop_annotations'].values
@@ -64,29 +62,20 @@ def test(data_root, ont, model, run, combine, alpha, prediction_type, tex_output
     eval_preds = []
 
     for i, row in enumerate(test_df.itertuples()):
-        if prediction_type == "initial":
-            row_preds = row.initial_preds
-        elif prediction_type == "final":
-            row_preds = row.final_preds
-        else:
-            raise ValueError(f"Unknown prediction type: {prediction_type}")
-
         if combine:
             diam_preds = np.zeros((len(terms),), dtype=np.float32)
             for go_id, score in diam_df.iloc[i]['diam_preds'].items():
                 if go_id in terms_dict:
                     diam_preds[terms_dict[go_id]] = score
         
-            preds = diam_preds * alpha + row_preds * (1 - alpha)
+            preds = diam_preds * alpha + row.preds * (1 - alpha)
         else:
-            preds = row_preds
+            preds = row.preds
         eval_preds.append(preds)
 
     labels = np.zeros((len(test_df), len(terms)), dtype=np.float32)
     eval_preds = np.concatenate(eval_preds).reshape(-1, len(terms))
 
-    print(test_df)
-    print(f"Number of prop annotations: {len(test_df['prop_annotations'].values[0])}")
     for i, row in enumerate(test_df.itertuples()):
         for go_id in row.prop_annotations:
             if go_id in terms_dict:
@@ -101,14 +90,12 @@ def test(data_root, ont, model, run, combine, alpha, prediction_type, tex_output
             roc_auc  = compute_roc(labels[:, i], eval_preds[:, i])
             total_sum += roc_auc
 
-    if total_sum == 0:
+    if total_n == 0:
         total_n = 1
     avg_auc = total_sum / total_n
     
     print('Computing Fmax')
     fmax = 0.0
-    prec_max = 0.0
-    rec_max = 0.0
     tmax = 0.0
     wfmax = 0.0
     wtmax = 0.0
@@ -118,8 +105,14 @@ def test(data_root, ont, model, run, combine, alpha, prediction_type, tex_output
     smin = 1000000.0
     rus = []
     mis = []
-    go_set = go_rels.get_namespace_terms(NAMESPACES[ont])
-    go_set.remove(FUNC_DICT[ont])
+
+    go_set = set()
+    for ont in ['mf', 'cc', 'bp']:
+        go_set |= go_rels.get_namespace_terms(NAMESPACES[ont])
+
+    for ont in ['mf', 'cc', 'bp']:
+        go_set.remove(FUNC_DICT[ont])
+
     labels = test_df['prop_annotations'].values
     labels = list(map(lambda x: set(filter(lambda y: y in go_set, x)), labels))
     spec_labels = test_df['exp_annotations'].values
@@ -154,8 +147,6 @@ def test(data_root, ont, model, run, combine, alpha, prediction_type, tex_output
         # print(f'Fscore: {fscore}, Precision: {prec}, Recall: {rec} S: {s}, RU: {ru}, MI: {mi} threshold: {threshold}, WFmax: {wf}')
         if fmax < fscore:
             fmax = fscore
-            prec_max = prec
-            rec_max = rec
             tmax = threshold
             avgic = avg_ic
             fmax_spec_match = spec_match
@@ -166,9 +157,8 @@ def test(data_root, ont, model, run, combine, alpha, prediction_type, tex_output
             smin = s
     if combine:
         model += '_diam'
-    print(model, ont)
+    print(model)
     print(f'Fmax: {fmax:0.3f}, Smin: {smin:0.3f}, threshold: {tmax}, spec: {fmax_spec_match}')
-    print(f'Precision: {prec_max:0.3f}, Recall: {rec_max:0.3f}')
     print(f'WFmax: {wfmax:0.3f}, threshold: {wtmax}')
     print(f'AUC: {avg_auc:0.3f}')
     precisions = np.array(precisions)
@@ -177,34 +167,38 @@ def test(data_root, ont, model, run, combine, alpha, prediction_type, tex_output
     recalls = recalls[sorted_index]
     precisions = precisions[sorted_index]
     aupr = np.trapz(precisions, recalls)
+    avg_precision = np.mean(precisions)
+    print(f'Average Precision: {avg_precision:0.3f}')
+    avg_recall = np.mean(recalls)
+    print(f'Average Recall: {avg_recall:0.3f}')
     print(f'AUPR: {aupr:0.3f}')
     print(f'AVGIC: {avgic:0.3f}')
 
     if combine:
         wandb_logger.log({
-            f"{prediction_type}_fmax_diam": fmax,
-            f"{prediction_type}_smin_diam": smin,
-            f"{prediction_type}_aupr_diam": aupr,
-            f"{prediction_type}_avg_auc_diam": avg_auc,
-            f"{prediction_type}_wfmax_diam": wfmax,
-            f"{prediction_type}_avgic_diam": avgic,
-            f"{prediction_type}_threshold_diam": tmax,
-            f"{prediction_type}_w_threshold_diam": wtmax,
-            f"{prediction_type}_spec_diam": fmax_spec_match,
-            f"{prediction_type}_combine_diam": combine
+            "fmax_diam": fmax,
+            "smin_diam": smin,
+            "aupr_diam": aupr,
+            "avg_auc_diam": avg_auc,
+            "wfmax_diam": wfmax,
+            "avgic_diam": avgic,
+            "threshold_diam": tmax,
+            "w_threshold_diam": wtmax,
+            "spec_diam": fmax_spec_match,
+            "combine_diam": combine
         })
     else:
         wandb_logger.log({
-            f"{prediction_type}_fmax": fmax,
-            f"{prediction_type}_smin": smin,
-            f"{prediction_type}_aupr": aupr,
-            f"{prediction_type}_avg_auc": avg_auc,
-            f"{prediction_type}_wfmax": wfmax,
-            f"{prediction_type}_avgic": avgic,
-            f"{prediction_type}_threshold": tmax,
-            f"{prediction_type}_w_threshold": wtmax,
-            f"{prediction_type}_spec": fmax_spec_match,
-            f"{prediction_type}_combine": combine
+            "fmax": fmax,
+            "smin": smin,
+            "aupr": aupr,
+            "avg_auc": avg_auc,
+            "wfmax": wfmax,
+            "avgic": avgic,
+            "threshold": tmax,
+            "w_threshold": wtmax,
+            "spec": fmax_spec_match,
+            "combine": combine
         })
 
 
@@ -290,5 +284,21 @@ def evaluate_annotations(go, real_annots, pred_annots):
     return f, p, r, s, ru, mi, fps, fns, avg_ic, wf
 
 
+class FakeLogger:
+    def log(self, data):
+        return
+
 if __name__ == '__main__':
-    main()
+    data_root = 'data'
+    combine = False
+    alpha = 0.5
+    tex_output = False
+    rows = 30
+    wandb_logger = FakeLogger() # Replace with actual wandb logger if needed
+    test(data_root, "mlp", "1", combine, alpha, tex_output, wandb_logger, rows=rows)
+    test(data_root, "refined", "", combine, alpha, tex_output, wandb_logger, rows=rows)
+    test(data_root, "refined_propagated", "", combine, alpha, tex_output, wandb_logger, rows=rows)
+    
+    
+
+

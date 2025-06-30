@@ -7,18 +7,20 @@ class TestProteinCentricAgent(TestCase):
 
     def setUp(self):
         data_root = "data"
-        ont = "mf"
         self.hypothesis_function = "GO:0000165"
 
-        terms= pd.read_pickle(f'{data_root}/{ont}/terms.pkl')['gos'].values.flatten()
+        terms_mf = pd.read_pickle(f'{data_root}/mf_terms.pkl')['terms'].values.flatten()
+        terms_cc = pd.read_pickle(f'{data_root}/cc_terms.pkl')['terms'].values.flatten()
+        terms_bp = pd.read_pickle(f'{data_root}/bp_terms.pkl')['terms'].values.flatten()
+        terms = sorted(set(terms_mf) | set(terms_cc) | set(terms_bp))
         terms_dict = {v: i for i, v in enumerate(terms)}
-                            
-        self.df = pd.read_pickle(f"{data_root}/{ont}/predictions_mlp_1.pkl")
+
+        self.df = pd.read_pickle(f"{data_root}/predictions_mlp_1.pkl")
         self.sequence = self.df.iloc[0].sequences
 
         initial_predictions = [1] * len(terms)  # Mock initial predictions
         idx = 4
-        self.agent = ProteinCentricAgent(idx, ont, self.df.iloc[idx], terms_dict)
+        self.agent = ProteinCentricAgent(idx, self.df.iloc[idx], terms_dict)
 
     def test_data_columns(self):
         column_of_interest = "preds"
@@ -45,10 +47,10 @@ class TestProteinCentricAgent(TestCase):
         # check if string value is numeric
         self.assertTrue(first_orgs.isnumeric())
 
-    # def test_uniprot_info_column(self):
-        # column_of_interest = "uniprot_text"
-        # columns = self.df.columns
-        # self.assertIn(column_of_interest, columns)
+    def test_uniprot_info_column(self):
+        column_of_interest = "uniprot_text"
+        columns = self.df.columns
+        self.assertIn(column_of_interest, columns)
         
     def test_get_diamond_score(self):
         diamond_score = self.agent.get_diamond_score(self.hypothesis_function)

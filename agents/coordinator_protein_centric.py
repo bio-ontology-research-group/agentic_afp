@@ -6,7 +6,7 @@ from src.ontology import Ontology
 from src.utils import FUNC_DICT, NAMESPACES
 from src.evaluation_utils import evaluate_annotations, compute_roc
 from agents import ProteinCentricAgent
-from agents.models import deepseek_model
+from agents.models import gemini_model as camel_model
 from sklearn.metrics import roc_curve, auc
 import math
 import logging
@@ -16,29 +16,31 @@ logger.addHandler(handler)
 logger.setLevel(logging.DEBUG)
 
 
-def load_data(data_root, ont, model_name, run):
+def load_data(data_root, model_name, run):
     # load terms dict
-    terms = pd.read_pickle(f'{data_root}/{ont}/terms.pkl')['gos'].values.flatten()
+    terms_mf = pd.read_pickle(f'{data_root}/mf_terms.pkl')['terms'].values.flatten()
+    terms_cc = pd.read_pickle(f'{data_root}/cc_terms.pkl')['terms'].values.flatten()
+    terms_bp = pd.read_pickle(f'{data_root}/bp_terms.pkl')['terms'].values.flatten()
+    terms = sorted(set(terms_mf) | set(terms_cc) | set(terms_bp))
     terms_dict = {v: i for i, v in enumerate(terms)}
-
+     
     # load ontology
-    ontology = Ontology(f'{data_root}/go-basic.obo', with_rels=True, taxon_constraints_file=f'{data_root}/go-computed-taxon-constraints.obo')
+    ontology = Ontology(f'{data_root}/go.obo', with_rels=True, taxon_constraints_file=f'{data_root}/go-computed-taxon-constraints.obo')
 
     # load predictions dataframe
-    preds_data_file = f'{data_root}/{ont}/predictions_{model_name}_{run}.pkl'
+    preds_data_file = f'{data_root}/predictions_{model_name}_{run}.pkl'
     test_df = pd.read_pickle(preds_data_file)
     
     return ontology, test_df, terms_dict
 
 
 class CoordinatorProteinCentricAgent(ChatAgent):
-    def __init__(self, ont, *args, **kwargs):
+    def __init__(self, *args, **kwargs):
 
         self.data_root = "data"
-        self.ont = ont
         model = "mlp"
         run = 1
-        self.ontology, self.test_df, self.terms_dict = load_data(self.data_root, ont, model, run)
+        self.ontology, self.test_df, self.terms_dict = load_data(self.data_root, model, run)
             
         self.protein_agents = []
 
@@ -58,30 +60,34 @@ class CoordinatorProteinCentricAgent(ChatAgent):
         performance."""
         super().__init__(*args, system_message=context,
                          # tools=[self.tool_create_protein_agents, self.tool_query_protein_agents, self.tool_update_predictions],
-                         model=deepseek_model,
+                         model=camel_model,
                          **kwargs)
 
     def protein_step(self, idx: int, verbose: bool = False):
 
-        protein_agent = self.create_protein_agent(idx, self.ont)
+        protein_agent = self.create_protein_agent(idx)
 
+        uniprot_information = protein_agent.get_uniprot_information()
         starting_prompt = f""""You are a protein agent that has
-        information about a specific protein. Please get interpro annotations, and taxon
-        constraints of the protein.""" 
+        information about a specific protein with the following
+        information: {uniprot_information}. Please retrieve interpro
+        annotations, and taxon constraints of the protein. Output the
+        information you obtained""" 
 
         general_information = protein_agent.step(starting_prompt).msgs[0].content
 
         if verbose:
             print(f"\n\n\nGeneral information about protein {idx}: {general_information}")
             
-        analysis_prompt = f"""Your response was:
-        {general_information}. Now have some information about
-        potential interpro annotations, 'in taxon' constraints and
-        'never in taxon' constraints. Interpro annotations and 'in
-        taxon' constrains should have a high score whereas 'never in
-        taxon' constraints should have low score. Please check that
-        the current scores are consistent with interpro and taxon
-        constraints"""
+        analysis_prompt = f"""Based on your previous response, and
+        your knowledge of the protein, analyze which GO terms are
+        plausible to be increased the score and which ones are
+        plausible to decrease the score. Carefully analyze
+        contradicting evidence. For example, it might happend that
+        Interpro suggests an annotation but Diamond does not, or
+        viceversa. Provide a list of GO terms with the proposed
+        refined score and an explanation. Your previous response was:
+        {general_information}."""
 
         
         
@@ -89,27 +95,14 @@ class CoordinatorProteinCentricAgent(ChatAgent):
         if verbose:
             print(f"\n\n\nConstraint analysis for protein {idx}: {constraint_analysis}")
         
-        updating_prompt = f"""You response was:
-        {constraint_analysis}. Based on your analysis, select the GO
-        terms whose score should be updated. Feel free to query the
-        diamond score for those terms. Your response should be the GO
-        terms and if the scores should be increased or decreased. If
-        no changes are needed, return 'No changes needed'."""
+        updating_prompt = f"""Based on your analysis, update the GO
+        terms as you see fit. If no changes are needed, return 'No
+        changes needed. You analysis was: {constraint_analysis}."""
 
         final_decision = protein_agent.step(updating_prompt).msgs[0].content
         if verbose:
             print(f"\n\n\nFinal decision for protein {idx}: {final_decision}")
         
-        final_prompt = f"""Your final decision was:
-        {final_decision}. Please update the scores for the GO terms
-        using the update_predictions function."""
-
-        final_response = protein_agent.step(final_prompt).msgs[0].content
-        if verbose:
-            print(f"\n\n\nFinal response for protein {idx}: {final_response}")
-
-
-            
         protein_predictions = protein_agent.data_row['preds']
         all_predictions = self.test_df['preds'].tolist()
         all_predictions[idx] = protein_predictions
@@ -117,17 +110,16 @@ class CoordinatorProteinCentricAgent(ChatAgent):
         
         
 
-    def create_protein_agent(self, idx: int, ont: str) -> ProteinCentricAgent:
+    def create_protein_agent(self, idx: int) -> ProteinCentricAgent:
         """
         Create a new protein agent with the specified index and initial predictions.
         Args:
             idx (int): The index of the protein agent.
-            ont (str): The ontology to use for the protein agent (mf, cc, or bp).
         Returns:
             ProteinCentricAgent: An instance of the ProteinCentricAgent class.
         """
         row = self.test_df.iloc[idx]
-        return ProteinCentricAgent(idx, ont, row, self.terms_dict)
+        return ProteinCentricAgent(idx, row, self.terms_dict)
 
     def create_protein_agents(self, idxs):
         """

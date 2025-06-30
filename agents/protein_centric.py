@@ -5,7 +5,7 @@ import ast
 # Add the project root directory to the Python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from agents.models import deepseek_model
+from agents.models import gemini_model as camel_model
 
 from src.ontology import Ontology
 
@@ -26,14 +26,25 @@ logger.setLevel(logging.INFO)
 
 DATA_ROOT = 'data'
 
+class GOTerm():
+    def __init__(self, go_id, info, predicted_score, diamond_score):
+        self.go_id = go_id
+        self.info = info
+        self.predicted_score = predicted_score
+        self.diamond_score = diamond_score
 
+    def __repr__(self):
+        return f"GOTerm(go_id={self.go_id}, info={self.info}, predicted_score={self.predicted_score}, diamond_score={self.diamond_score})"
+        
+
+        
 class ProteinCentricAgent(ChatAgent):
-    def __init__(self, idx, ont, data_row, terms_dict, *args, **kwargs):
+    def __init__(self, idx, data_row, terms_dict, *args, **kwargs):
         if not isinstance(data_row, pd.Series):
             raise ValueError(f"data_row must be a pandas Series object. Got {type(data_row)} instead.")
 
         self.idx = idx
-        self.go = Ontology(f"{DATA_ROOT}/go-basic.obo", with_rels=True, taxon_constraints_file=f"{DATA_ROOT}/go-computed-taxon-constraints.obo")
+        self.go = Ontology(f"{DATA_ROOT}/go.obo", with_rels=True, taxon_constraints_file=f"{DATA_ROOT}/go-computed-taxon-constraints.obo")
         self.data_row = data_row
         self.interpro_to_go = pd.read_csv(f"{DATA_ROOT}/interpro2go.tsv", sep='\t')
 
@@ -42,9 +53,9 @@ class ProteinCentricAgent(ChatAgent):
         self.sequence = self.data_row['sequences']
         self.interpros = self.get_interpro_annotations()
         
-        diamond_tool = FunctionTool(self.get_diamond_score)
+        # diamond_tool = FunctionTool(self.get_diamond_score)
         interpro_tool = FunctionTool(self.get_interpro_annotations)
-        score_query_tool = FunctionTool(self.query_score)
+        # score_query_tool = FunctionTool(self.query_score)
         # uniprot_tool = FunctionTool(self.get_uniprot_information)
         update_tool = FunctionTool(self.update_predictions)
         taxon_constraints_tool = FunctionTool(self.get_taxon_constraints)
@@ -59,7 +70,7 @@ the diamond score for the term. You will be asked to increase or
 decrease the score of the term based on the information you have
 access to.  """
         
-        super().__init__(*args, system_message=context, tools=[diamond_tool, interpro_tool, score_query_tool, taxon_constraints_tool, update_tool], model=deepseek_model, **kwargs)
+        super().__init__(*args, system_message=context, tools=[interpro_tool, taxon_constraints_tool, update_tool], model=camel_model, **kwargs)
 
     def get_interpro_annotations(self) -> list:
         """
@@ -79,8 +90,9 @@ access to.  """
             gos.extend(go_set)
 
         gos = list(set([go for go in gos if go in self.terms_dict]))  # Ensure unique GO terms and valid ones
-        gos_info = [(term, self.go.get_term_name(term), self.go.get_term_definition(term)) for term in gos]
-        
+        go_objects = [GOTerm(go_id=go, info=self.go.get_term_info(go), predicted_score=self.query_score(go), diamond_score=self.get_diamond_score(go)) for go in gos]
+
+        gos_info = [str(go_obj) for go_obj in go_objects]
         return gos_info
 
     def is_in_interpro(self, go_term: str) -> bool:
@@ -111,14 +123,14 @@ access to.  """
         else:
             return float(preds[go_term])
 
-    # def get_uniprot_information(self) -> str:
-        # """
-        # Retrieve UniProt information for the current sequence.
-        # Returns:
-            # str: A string containing the UniProt information.
-        # """
-        # uniprot_info = self.data_row['uniprot_text']
-        # return uniprot_info
+    def get_uniprot_information(self) -> str:
+        """
+        Retrieve UniProt information for the current sequence.
+        Returns:
+            str: A string containing the UniProt information.
+        """
+        uniprot_info = self.data_row['uniprot_text']
+        return uniprot_info
         
     def get_taxon_constraints(self) -> List[str]:
         """
@@ -131,8 +143,12 @@ access to.  """
             return {"in_taxon": [], "never_in_taxon": []}
         
         taxa = self.go.taxon_map[org]
-        in_taxon = [self.go.get_term_info(go_id) for go_id in taxa[0] if go_id in self.terms_dict]
-        never_in_taxon = [self.go.get_term_info(go_id) for go_id in taxa[1] if go_id in self.terms_dict]
+        in_taxon = [GOTerm(go_id=go, info=self.go.get_term_info(go), predicted_score=self.query_score(go), diamond_score=self.get_diamond_score(go)) for go in taxa[0] if go in self.terms_dict]
+        never_in_taxon = [GOTerm(go_id=go, info=self.go.get_term_info(go), predicted_score=self.query_score(go), diamond_score=self.get_diamond_score(go)) for go in taxa[1] if go in self.terms_dict]
+
+        in_taxon = [str(go_obj) for go_obj in in_taxon]
+        never_in_taxon = [str(go_obj) for go_obj in never_in_taxon]
+        
         taxon_constraints = {"in_taxon": in_taxon, "never_in_taxon": never_in_taxon}
         # taxon_constraints = {"in_taxon": taxa[0], "never_in_taxon": taxa[1]}
 
