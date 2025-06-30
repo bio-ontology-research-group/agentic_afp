@@ -5,20 +5,24 @@ import numpy as np
 import pandas as pd
 import gzip
 import logging
-from utils import Ontology, is_exp_code, is_cafa_target, FUNC_DICT
-import torch
+from ontology import Ontology, is_exp_code, is_cafa_target, FUNC_DICT
+import torch as th
+import os
+from Bio.Seq import Seq
+from Bio.SeqRecord import SeqRecord
+from Bio import SeqIO
 
 logging.basicConfig(level=logging.INFO)
 
 @ck.command()
 @ck.option(
-    '--swissprot-file', '-sf', default='data/uniprot_sprot_2023_03.dat.gz',
+    '--swissprot-file', '-sf', default='data/uniprot_sprot_2023_05.dat.gz',
     help='UniProt/SwissProt knowledgebase file in text format (archived)')
 @ck.option(
-    '--out-file', '-o', default='data/swissprot_exp_2023_03.pkl',
+    '--out-file', '-o', default='data/swissprot_exp_2023_05.pkl',
     help='Result file with a list of proteins, sequences and annotations')
 def main(swissprot_file, out_file):
-    go = Ontology('data/go-basic.obo', with_rels=True)
+    go = Ontology('data/go.obo', with_rels=True)
     proteins, accessions, sequences, annotations, string_ids, orgs, genes, interpros = load_data(swissprot_file)
     df = pd.DataFrame({
         'proteins': proteins,
@@ -52,6 +56,8 @@ def main(swissprot_file, out_file):
     df['exp_annotations'] = annotations
     
     prop_annotations = []
+    esm2_data = []
+    missing = []
     for i, row in df.iterrows():
         # Propagate annotations
         annot_set = set()
@@ -60,8 +66,27 @@ def main(swissprot_file, out_file):
             annot_set |= go.get_ancestors(go_id)
         annots = list(annot_set)
         prop_annotations.append(annots)
+        filename = f'data/esm2/{row.proteins.split("_")[1]}/{row.proteins}.pt'
+        if not os.path.exists(filename):
+            missing.append((row.proteins, row.sequences))
+        else:
+            emb = th.load(filename)
+            if len(emb) > 0:
+                esm2_data.append(emb)
+            else:
+                missing.append((row.proteins, row.sequences))
+    
+    with open('data/missing_esm2.fa', 'w') as f:
+        for prot, seq in missing:
+            record = SeqRecord(
+                Seq(seq),
+                id=prot,
+                description=''
+            )
+            SeqIO.write(record, f, 'fasta')
 
     df['prop_annotations'] = prop_annotations
+    df['esm2_data'] = esm2_data
 
     interpro2go = {}
     gos = set()
@@ -79,9 +104,6 @@ def main(swissprot_file, out_file):
             interpro2go[ipr_id].add(go_id)
             gos.add(go_id)
 
-    gos = list(gos)
-    gos_df = pd.DataFrame({'gos': gos})
-    gos_df.to_pickle('data/interpro_gos.pkl')
     ipr2go = []
     for i, row in enumerate(df.itertuples()):
         prot_id = row.proteins
@@ -91,11 +113,9 @@ def main(swissprot_file, out_file):
                 annots |= interpro2go[ipr]
         ipr2go.append(annots)
     df['interpro2go'] = ipr2go
-
+    
     df.to_pickle(out_file)
     logging.info('Successfully saved %d proteins' % (len(df),) )
-
-
     
     
 def load_data(swissprot_file):
