@@ -5,7 +5,7 @@ import pandas as pd
 from src.ontology import Ontology
 from src.utils import FUNC_DICT, NAMESPACES
 from src.evaluation_utils import evaluate_annotations, compute_roc
-from agents import ProteinCentricAgent
+from agents import ProteinCentricAgent, Protein2GOHeuristician
 from agents.models import gemini_model as camel_model
 from sklearn.metrics import roc_curve, auc
 import math
@@ -16,32 +16,35 @@ logger.addHandler(handler)
 logger.setLevel(logging.DEBUG)
 
 
-def load_data(data_root, model_name, run):
+def load_data(data_root, ont, model_name):
     # load terms dict
-    terms_mf = pd.read_pickle(f'{data_root}/mf_terms.pkl')['terms'].values.flatten()
-    terms_cc = pd.read_pickle(f'{data_root}/cc_terms.pkl')['terms'].values.flatten()
-    terms_bp = pd.read_pickle(f'{data_root}/bp_terms.pkl')['terms'].values.flatten()
-    terms = sorted(set(terms_mf) | set(terms_cc) | set(terms_bp))
+    terms = pd.read_pickle(f'{data_root}/{ont}_terms.pkl')['terms'].values.flatten()
     terms_dict = {v: i for i, v in enumerate(terms)}
      
     # load ontology
     ontology = Ontology(f'{data_root}/go.obo', with_rels=True, taxon_constraints_file=f'{data_root}/go-computed-taxon-constraints.obo')
 
     # load predictions dataframe
-    preds_data_file = f'{data_root}/predictions_{model_name}_{run}.pkl'
+    preds_data_file = f'{data_root}/test_predictions_{model_name}.pkl'
     test_df = pd.read_pickle(preds_data_file)
     
     return ontology, test_df, terms_dict
 
 
 class CoordinatorProteinCentricAgent(ChatAgent):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, ont, *args, **kwargs):
 
         self.data_root = "data"
+        self.ont = ont
         model = "mlp"
         run = 1
-        self.ontology, self.test_df, self.terms_dict = load_data(self.data_root, model, run)
-            
+        
+        self.ontology, self.test_df, self.terms_dict = load_data(self.data_root, ont, model)
+
+        
+        leaf_nodes = self.ontology.get_leaf_nodes(list(self.terms_dict.keys()))
+        self.go_info = [(go_id, self.ontology.get_term_name(go_id), self.ontology.get_term_definition(go_id)) for go_id in leaf_nodes]
+        
         self.protein_agents = []
 
         # self.test_tool = FunctionTool(self.test)
@@ -66,47 +69,73 @@ class CoordinatorProteinCentricAgent(ChatAgent):
     def protein_step(self, idx: int, verbose: bool = False):
 
         protein_agent = self.create_protein_agent(idx)
-
         uniprot_information = protein_agent.get_uniprot_information()
-        starting_prompt = f""""You are a protein agent that has
-        information about a specific protein with the following
-        information: {uniprot_information}. Please retrieve interpro
-        annotations, and taxon constraints of the protein. Output the
-        information you obtained""" 
+        
+        starting_prompt = f"""You are analyzing protein with the
+        following data: {uniprot_information}. 
+Tasks:
+1. Retrieve InterPro domain annotations
+2. Identify taxonomic constraints
+3. Report findings in structured format based on your knowledge
+
+Output format:
+- InterPro domains mapped as GO terms: [list with GO and descriptions]
+- Taxon constraints: [specific taxonomic limitations]
+- Plausible GO terms: [list of GO terms with explanations]
+- Non-plausible GO terms: [list of GO terms with explanations]
+- Key functional insights: [brief summary]
+        """
 
         general_information = protein_agent.step(starting_prompt).msgs[0].content
 
         if verbose:
             print(f"\n\n\nGeneral information about protein {idx}: {general_information}")
-            
-        analysis_prompt = f"""Based on your previous response, and
-        your knowledge of the protein, analyze which GO terms are
-        plausible to be increased the score and which ones are
-        plausible to decrease the score. Carefully analyze
-        contradicting evidence. For example, it might happend that
-        Interpro suggests an annotation but Diamond does not, or
-        viceversa. Provide a list of GO terms with the proposed
-        refined score and an explanation. Your previous response was:
-        {general_information}."""
 
-        
-        
+        # You found this information: {output}
+        analysis_prompt = f"""
+For each relevant GO term suggested (including Interpro and Taxa), provide:
+- Obtain GO term information using the get_go_term_info tool
+- Current score vs. recommended score
+- Supporting evidence (InterPro/Diamond/literature,heuristic)
+- Conflicting evidence and resolution
+- Confidence level (high/medium/low)
+
+
+"""
+            
         constraint_analysis = protein_agent.step(analysis_prompt).msgs[0].content
         if verbose:
             print(f"\n\n\nConstraint analysis for protein {idx}: {constraint_analysis}")
+
+        # After your first analysis you have the following information: {output}.
+        analysis_2_prompt = f"""
+        Perfom a second analysis. Follow these examples:
+        - If you found a GO term is plausible but too specific, suggest a more general term.
+        - If a GO term is plausible but not supported by InterPro, suggest a score based on Diamond score or heuristic knowledge.
+       
+        """
+
+        constraint_analysis_2 = protein_agent.step(analysis_2_prompt).msgs[0].content
+        print(f"\n\n\nConstraint analysis 2 for protein {idx}: {constraint_analysis_2}")
         
-        updating_prompt = f"""Based on your analysis, update the GO
-        terms as you see fit. If no changes are needed, return 'No
-        changes needed. You analysis was: {constraint_analysis}."""
+        updating_prompt = f"""
+Apply your analysis to update GO term scores. Perform the update and also provide a rationale for each change. If no changes are needed, return 'No changes needed'. 
+
+Output format:
+- If changes needed: JSON list with {{go_term, old_score, new_score, rationale}}
+- If no changes: "No changes needed"
+
+Only include terms with justified score modifications.
+"""
 
         final_decision = protein_agent.step(updating_prompt).msgs[0].content
         if verbose:
             print(f"\n\n\nFinal decision for protein {idx}: {final_decision}")
         
-        protein_predictions = protein_agent.data_row['preds']
-        all_predictions = self.test_df['preds'].tolist()
+        protein_predictions = protein_agent.data_row[f'{self.ont}_preds']
+        all_predictions = self.test_df[f'{self.ont}_preds'].tolist()
         all_predictions[idx] = protein_predictions
-        self.test_df['preds'] = all_predictions
+        self.test_df[f'{self.ont}_preds'] = all_predictions
         
         
 
@@ -119,7 +148,7 @@ class CoordinatorProteinCentricAgent(ChatAgent):
             ProteinCentricAgent: An instance of the ProteinCentricAgent class.
         """
         row = self.test_df.iloc[idx]
-        return ProteinCentricAgent(idx, row, self.terms_dict)
+        return ProteinCentricAgent(idx, self.ont, self.ontology, row, self.terms_dict)
 
     def create_protein_agents(self, idxs):
         """
@@ -153,7 +182,7 @@ class CoordinatorProteinCentricAgent(ChatAgent):
         Returns:
             np.ndarray: An array of predictions from each protein agent.
         """
-        predictions = np.array(self.test_df['preds'].tolist())
+        predictions = np.array(self.test_df[f'{self.ont}_preds'].tolist())
         return predictions
 
     def update_predictions(self, idx, go_term, new_score):
@@ -166,9 +195,9 @@ class CoordinatorProteinCentricAgent(ChatAgent):
         """
         # Retrieve the latest predictions from the agent
         go_id = self.terms_dict[go_term]
-        predictions = self.test_df.preds.tolist()[idx]
+        predictions = self.test_df[f"{self.ont}_preds"].tolist()[idx]
         predictions[go_id] = new_score
-        self.test_df.preds[idx] = predictions
+        self.test_df[f'{self.ont}_preds'][idx] = predictions
         
         
 
@@ -287,7 +316,7 @@ class CoordinatorProteinCentricAgent(ChatAgent):
         eval_preds = []
 
         for i, row in enumerate(self.test_df.itertuples()):
-            row_preds = row.preds
+            row_preds = row[f'{self.ont}_preds']
             preds = row_preds
             eval_preds.append(preds)
 

@@ -63,7 +63,8 @@ class Ontology(object):
         # Load taxon constraints if file is provided
         if taxon_constraints_file:
             self.load_taxon_constraints(taxon_constraints_file)
-
+        
+            
     def has_term(self, term_id):
         return term_id in self.ont
 
@@ -91,6 +92,7 @@ class Ontology(object):
             else:
                 min_n = min([cnt[x] for x in parents])
 
+            parents = {x: cnt[x] for x in parents}
             self.ic[go_id] = math.log(min_n / n, 2)
             self.ic_norm = max(self.ic_norm, self.ic[go_id])
     
@@ -392,13 +394,17 @@ class Ontology(object):
         """
         if self.has_term(term_id):
             term = self.ont[term_id]
+            children = term.get('children', set())
+            children = [self.get_term_name(cid) for cid in children if self.has_term(cid)]
+            parents = term.get('is_a', [])
+            parents = [self.get_term_name(pid) for pid in parents if self.has_term(pid)]
             return {
                 'id': term_id,
                 'name': term.get('name', 'Unknown'),
                 'definition': term.get('definition', 'No definition available'),
                 'namespace': term.get('namespace', 'Unknown'),
-                'parents': term.get('is_a', []),
-                'children': list(term.get('children', set())),
+                'parents': parents,
+                'children': children,
                 'alt_ids': term.get('alt_ids', []),
                 'in_taxon': term.get('in_taxon', []),
                 'never_in_taxon': term.get('never_in_taxon', [])

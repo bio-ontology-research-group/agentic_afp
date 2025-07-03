@@ -7,8 +7,6 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from agents.models import gemini_model as camel_model
 
-from src.ontology import Ontology
-
 from camel.models import ModelFactory
 from camel.types import ModelPlatformType
 from camel.agents import ChatAgent
@@ -35,16 +33,19 @@ class GOTerm():
 
     def __repr__(self):
         return f"GOTerm(go_id={self.go_id}, info={self.info}, predicted_score={self.predicted_score}, diamond_score={self.diamond_score})"
-        
+
+    def __str__(self):
+        return f"{self.go_id} ({self.info}) - Predicted Score: {self.predicted_score}, Diamond Score: {self.diamond_score}"
 
         
 class ProteinCentricAgent(ChatAgent):
-    def __init__(self, idx, data_row, terms_dict, *args, **kwargs):
+    def __init__(self, idx, ont, ontology, data_row, terms_dict, *args, **kwargs):
         if not isinstance(data_row, pd.Series):
             raise ValueError(f"data_row must be a pandas Series object. Got {type(data_row)} instead.")
 
         self.idx = idx
-        self.go = Ontology(f"{DATA_ROOT}/go.obo", with_rels=True, taxon_constraints_file=f"{DATA_ROOT}/go-computed-taxon-constraints.obo")
+        self.ont = ont
+        self.go = ontology
         self.data_row = data_row
         self.interpro_to_go = pd.read_csv(f"{DATA_ROOT}/interpro2go.tsv", sep='\t')
 
@@ -59,18 +60,26 @@ class ProteinCentricAgent(ChatAgent):
         # uniprot_tool = FunctionTool(self.get_uniprot_information)
         update_tool = FunctionTool(self.update_predictions)
         taxon_constraints_tool = FunctionTool(self.get_taxon_constraints)
+        get_go_term_info_tool = FunctionTool(self.get_go_term_info)
+        
+        if ont == 'mf':
+            long_ont = 'molecular function'
+        elif ont == 'bp':
+            long_ont = 'biological process'
+        elif ont == 'cc':
+            long_ont = 'cellular component'
         
         context = f"""You are a GO annotation curator that refines GO
-term predictions by revising external information of a protein
-sequence such as the interpro annotations or diamon score
-similarity. You operate in this way: you are given a term and you need
-to check (1) if the term is in the interpro annotations or if the
-definition is related to the definition of interpro annotations, (2)
-the diamond score for the term. You will be asked to increase or
-decrease the score of the term based on the information you have
-access to.  """
+term predictions for the {long_ont} subontology. You operate by
+revising external information of a protein sequence such as the
+interpro annotations or diamon score similarity. You operate in this
+way: you are given a term and you need to check (1) if the term is in
+the interpro annotations or if the definition is related to the
+definition of interpro annotations, (2) the diamond score for the
+term. You will be asked to increase or decrease the score of the term
+based on the information you have access to.  """
         
-        super().__init__(*args, system_message=context, tools=[interpro_tool, taxon_constraints_tool, update_tool], model=camel_model, **kwargs)
+        super().__init__(*args, system_message=context, tools=[interpro_tool, taxon_constraints_tool, update_tool, get_go_term_info_tool], model=camel_model, **kwargs)
 
     def get_interpro_annotations(self) -> list:
         """
@@ -78,9 +87,9 @@ access to.  """
         Args:
             sequence (str): The protein sequence to analyze.
         Returns:
-            list: A list of tuples containing GO term identifiers, names, and definitions.
+            list: A list of GOTerm objects representing the InterPro annotations.
         """
-
+        # return []
         interpros = self.data_row['interpros']
         gos = []
         for interpro in interpros:
@@ -92,9 +101,23 @@ access to.  """
         gos = list(set([go for go in gos if go in self.terms_dict]))  # Ensure unique GO terms and valid ones
         go_objects = [GOTerm(go_id=go, info=self.go.get_term_info(go), predicted_score=self.query_score(go), diamond_score=self.get_diamond_score(go)) for go in gos]
 
-        gos_info = [str(go_obj) for go_obj in go_objects]
-        return gos_info
+        return go_objects
 
+    def get_go_term_info(self, go_term: str) -> str:
+        """
+        Retrieve the information for a given GO term.
+        Args:
+            go_term (str): The GO term to retrieve information for.
+        Returns:
+            str: The information associated with the GO term.
+        """
+        if go_term not in self.terms_dict:
+            return f"GO term {go_term} not found in terms dictionary."
+
+        go = GOTerm(go_id=go_term, info=self.go.get_term_info(go_term), predicted_score=self.query_score(go_term), diamond_score=self.get_diamond_score(go_term))
+        return str(go)
+        
+    
     def is_in_interpro(self, go_term: str) -> bool:
         """
         Check if a GO term is associated with any InterPro annotations.
@@ -170,7 +193,7 @@ access to.  """
             # raise ValueError(f"GO term {go_term} not found in terms dictionary.")
         
         idx = self.terms_dict[go_term]
-        predictions = self.data_row['preds']
+        predictions = self.data_row[f'{self.ont}_preds']
         return predictions[idx]
 
     def update_predictions(self, go_term: str, score: float) -> None:
@@ -181,9 +204,17 @@ access to.  """
         """
         if go_term in self.terms_dict:
             go_id = self.terms_dict.get(go_term)
-            self.data_row['preds'][go_id] = score
+            self.data_row[f'{self.ont}_preds'][go_id] = score
 
-
+    def get_top_terms(self):
+        predictions = self.data_row[f'{self.ont}_preds']
+        terms = list(self.terms_dict.keys())
+        terms = self.go.get_leaf_nodes(terms)
+        terms_with_scores = {go: predictions[self.terms_dict[go]] for go in terms}
+        sorted_terms = sorted(terms_with_scores.items(), key=lambda item: item[1], reverse=True)
+        highest_terms = sorted_terms[:10]
+        return highest_terms
+        
 def test_diamond_agent():
     data_root = '../data'
     ont = 'mf'

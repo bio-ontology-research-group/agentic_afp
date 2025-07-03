@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 
-def compare_list_columns(df1, df2, column_name='preds', tolerance=1e-9):
+def compare_list_columns(df1, df2, ont, column_name='preds', tolerance=1e-9):
     """
     Compare a column containing lists of floats between two DataFrames.
     
@@ -15,6 +15,7 @@ def compare_list_columns(df1, df2, column_name='preds', tolerance=1e-9):
     """
     
     # Check if both DataFrames have the column
+    column_name = f"{ont}_{column_name}"  # Adjust column name based on ontology
     if column_name not in df1.columns or column_name not in df2.columns:
         print(f"Column '{column_name}' not found in one or both DataFrames")
         return False
@@ -56,11 +57,12 @@ def compare_list_columns(df1, df2, column_name='preds', tolerance=1e-9):
 # Example usage
 if __name__ == "__main__":
     # Create sample DataFrames
-    df1 = pd.read_pickle('data/predictions_mlp_1.pkl')
-    df2 = pd.read_pickle('data/predictions_refined.pkl')
+    ont = "bp"
+    df1 = pd.read_pickle('data/test_predictions_mlp.pkl')
+    df2 = pd.read_pickle('data/test_predictions_refined.pkl')
         
     # Test equal DataFrames
-    result = compare_list_columns(df1, df2)
+    result = compare_list_columns(df1, df2, ont)
     print(f"DataFrames equal: {result}")
     
 

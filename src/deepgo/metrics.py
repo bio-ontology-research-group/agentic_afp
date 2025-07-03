@@ -12,7 +12,7 @@ from scipy import sparse
 import math
 from .utils import NAMESPACES, FUNC_DICT
 
-def compute_metrics(test_df, go, terms_dict, terms, ont, eval_preds):
+def compute_metrics(test_df, go, terms_dict, terms, ont, eval_preds, verbose=False):
     labels = np.zeros((len(test_df), len(terms_dict)), dtype=np.float32)
     for i, row in enumerate(test_df.itertuples()):
         for go_id in row.prop_annotations:
@@ -28,9 +28,10 @@ def compute_metrics(test_df, go, terms_dict, terms, ont, eval_preds):
             roc_auc  = compute_roc(labels[:, i], eval_preds[:, i])
             total_sum += roc_auc
 
+    if total_n == 0:
+        total_n = 1
     avg_auc = total_sum / total_n
     
-    print('Computing Fmax')
     fmax = 0.0
     tmax = 0.0
     wfmax = 0.0
@@ -86,8 +87,13 @@ def compute_metrics(test_df, go, terms_dict, terms, ont, eval_preds):
     recalls = recalls[sorted_index]
     precisions = precisions[sorted_index]
     aupr = np.trapz(precisions, recalls)
-    
 
+    if verbose:
+        print(f'\tFmax: {fmax:.3f}')
+        print(f'\tSmin: {smin:.3f}')
+        print(f'\tAUPR: {aupr:.3f}')
+        print(f"\tAUC: {avg_auc:.3f}")
+        print(f"\tThreshold: {tmax:.3f}")
     return fmax, smin, tmax, wfmax, wtmax, avg_auc, aupr, avgic, fmax_spec_match
 
 
@@ -156,6 +162,8 @@ def evaluate_annotations(go, real_annots, pred_annots):
             p += precision
             if tpic + fpic > 0:
                 wp += tpic / (tpic + fpic)
+    if total == 0:
+        total = 1
     avg_ic = (avg_ic + mi) / total
     ru /= total
     mi /= total

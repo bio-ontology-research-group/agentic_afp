@@ -8,22 +8,19 @@ class TestProteinCentricAgent(TestCase):
     def setUp(self):
         data_root = "data"
         self.hypothesis_function = "GO:0000165"
-
-        terms_mf = pd.read_pickle(f'{data_root}/mf_terms.pkl')['terms'].values.flatten()
-        terms_cc = pd.read_pickle(f'{data_root}/cc_terms.pkl')['terms'].values.flatten()
-        terms_bp = pd.read_pickle(f'{data_root}/bp_terms.pkl')['terms'].values.flatten()
-        terms = sorted(set(terms_mf) | set(terms_cc) | set(terms_bp))
+        self.ont = "mf"
+        terms = pd.read_pickle(f'{data_root}/{self.ont}_terms.pkl')['terms'].values.flatten()
         terms_dict = {v: i for i, v in enumerate(terms)}
 
-        self.df = pd.read_pickle(f"{data_root}/predictions_mlp_1.pkl")
+        self.df = pd.read_pickle(f"{data_root}/test_predictions_mlp.pkl")
         self.sequence = self.df.iloc[0].sequences
 
         initial_predictions = [1] * len(terms)  # Mock initial predictions
         idx = 4
-        self.agent = ProteinCentricAgent(idx, self.df.iloc[idx], terms_dict)
+        self.agent = ProteinCentricAgent(idx, self.ont, self.df.iloc[idx], terms_dict)
 
     def test_data_columns(self):
-        column_of_interest = "preds"
+        column_of_interest = f"{self.ont}_preds"
         columns = self.df.columns
         self.assertIn(column_of_interest, columns)
         
@@ -70,7 +67,7 @@ class TestProteinCentricAgent(TestCase):
         interpros = self.agent.interpros
         self.assertIsInstance(interpros, list)
         self.assertGreater(len(interpros), 0)
-        self.assertTrue(all(x[0].startswith("GO") for x in interpros))
+        self.assertTrue(all(x.go_id.startswith("GO") for x in interpros))
 
     def test_get_taxon_constraints(self):
         taxon_constraints = self.agent.get_taxon_constraints()
@@ -82,9 +79,9 @@ class TestProteinCentricAgent(TestCase):
 
     def test_update_predictions(self):
         non_existing_go_term = "GO:0000000"
-        current_predictions = self.agent.data_row['preds'].copy()
+        current_predictions = self.agent.data_row[f'{self.ont}_preds'].copy()
         self.agent.update_predictions(non_existing_go_term, -1)
-        new_predictions = self.agent.data_row['preds'].copy()
+        new_predictions = self.agent.data_row[f'{self.ont}_preds'].copy()
         self.assertEqual(len(current_predictions), len(new_predictions))
         self.assertTrue(all(np.isclose(current_predictions, new_predictions)))
                 
