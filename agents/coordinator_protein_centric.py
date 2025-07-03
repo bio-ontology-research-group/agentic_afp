@@ -25,11 +25,43 @@ def load_data(data_root, ont, model_name):
     ontology = Ontology(f'{data_root}/go.obo', with_rels=True, taxon_constraints_file=f'{data_root}/go-computed-taxon-constraints.obo')
 
     # load predictions dataframe
+    train_data_file = f'{data_root}/train_data.pkl'
+    go_frequency = compute_frequency(train_data_file, terms_dict)
+    
     preds_data_file = f'{data_root}/test_predictions_{model_name}.pkl'
     test_df = pd.read_pickle(preds_data_file)
-    
-    return ontology, test_df, terms_dict
 
+
+    
+    return ontology, test_df, terms_dict, go_frequency
+
+
+def compute_frequency(train_data_file, terms_dict):
+        """
+        Compute the frequency of each GO term in the training data.
+        Args:
+                train_data_file (str): Path to the training data file.
+                terms_dict (dict): Dictionary mapping GO terms to indices.
+        Returns:
+                dict: A dictionary with GO terms as keys and their frequencies as values.
+        """
+        train_df = pd.read_pickle(train_data_file)
+        annotations = train_df['prop_annotations'].values
+        annotations = list(map(lambda x: set(x), annotations))
+        
+        frequency = {term: 0 for term in terms_dict.keys()}
+        
+        for annots in annotations:
+                for go_term in annots:
+                if go_term in frequency:
+                        frequency[go_term] += 1
+
+        sorted_frequency = dict(sorted(frequency.items(), key=lambda x: x[1]))
+                        
+        return sorted_frequency
+    
+
+    
 
 class CoordinatorProteinCentricAgent(ChatAgent):
     def __init__(self, ont, *args, **kwargs):
@@ -39,7 +71,11 @@ class CoordinatorProteinCentricAgent(ChatAgent):
         model = "mlp"
         run = 1
         
-        self.ontology, self.test_df, self.terms_dict = load_data(self.data_root, ont, model)
+        self.ontology, self.test_df, self.terms_dict, terms_frequency = load_data(self.data_root, ont, model)
+
+
+        self.less_frequent_terms = dict(list(terms_frequence.items())[:20])
+        print(f"Less frequent terms: {self.less_frequent_terms}")
 
         
         leaf_nodes = self.ontology.get_leaf_nodes(list(self.terms_dict.keys()))
