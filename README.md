@@ -20,59 +20,54 @@ pytest
 ```
 ## Usage
 
-Initially, we introduce a ProteinAgent, which takes initial GO
-function predictions and looks for potential overlooked terms in
-InterPro and Diamond. InterPro annotations and Diamond scores are used
-to increase initial prediction scores.
+Initially, we introduce a ProteinCentricAgent, which takes initial GO
+function predictions and looks for potential overlooked terms to
+refine its predictions. It relies on sources such as InterPro and
+Diamond. It uses text descriptions of proteins and GO terms.
+
+To run:
 
 ```bash
-python predict.py
-python evaluate.py
-```
-
-Example output of `predict.py`:
-```bash
-GO term: GO:0016020, Score: 0.7, Explanation: InterPro domain + Diamond 0.63 similarity
-```
-
-Example output of `evaluate.py`:
-```bash
-# INITIAL PREDICTIONS
-Computing Fmax
-agentic_go cc
-Fmax: 0.673, Smin: 8.654, threshold: 0.41, spec: 311
-Precision: 0.692, Recall: 0.655
-WFmax: 0.571, threshold: 0.3
-AUC: 0.932
-AUPR: 0.667
-AVGIC: 7.368
-
-# REFINED PREDICTIONS
-Number of prop annotations: 22
-Computing Fmax
-agentic_go cc
-Fmax: 0.688, Smin: 8.169, threshold: 0.49, spec: 318
-Precision: 0.729, Recall: 0.652
-WFmax: 0.588, threshold: 0.3
-AUC: 0.935
-AUPR: 0.680
-AVGIC: 7.259
-
+python run_protein_centric.py
+python propagate_annotations.py
+python evaluate_all.py
 ```
 
 # Details:
 
-* Model used: `deepseek/deepseek-chat-v3-0324`
-* Protein agent is at: `agents/protein.py`
+* Model used: `google/gemini-2.0-flash-001`
+* Protein agent is at: `agents/protein_centric_agent.py`
 
+# Preliminary results:
+
+## Molecular Function (MF) 
+| Prediction Type | Fmax  | Smin  | AUPR  | AUC   |
+|----------------|-------|-------|-------|------- |
+| Initial        | 0.642 | 7.364 | 0.642 | 0.957  |
+| Refined        | 0.660 | 7.240 | 0.658 | 0.959  |
+| Improvement    | +0.018| -0.124| +0.016| +0.002 |
+
+## Cellular Component (CC) 
+
+| Prediction Type | Fmax  | Smin  | AUPR  | AUC   |
+|----------------|-------|-------|-------|-------|
+| Initial        | 0.693 | 7.530 | 0.723 | 0.936 |
+| Refined        | 0.702 | 7.331 | 0.730 | 0.938 |
+| Improvement    | +0.009| -0.199| +0.007| +0.002|
+
+## Biological Process (BP)
+| Prediction Type | Fmax  | Smin   | AUPR  | AUC   |
+|----------------|-------|--------|-------|-------|
+| Initial        | 0.414 | 27.440 | 0.354 | 0.868 |
+| Refined        | 0.425 | 27.433 | 0.361 | 0.870 |
+| Improvement    | +0.011| -0.007 | +0.007| +0.002|
 
 
 # Data
 
-To extend the `test.pkl` file with diamond predictions and uniprot text information run:
+We extend the `test.pkl` file with diamond predictions and uniprot text information run:
 
 ```
 python diamond_preds.py
 python get_protein_uniprot_info.py
-
 ```
