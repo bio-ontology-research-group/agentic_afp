@@ -1,13 +1,8 @@
 from camel.agents import ChatAgent
-from camel.toolkits import FunctionTool
-import numpy as np
 import pandas as pd
 from src.ontology import Ontology
-from src.utils import FUNC_DICT, NAMESPACES
-from src.evaluation_utils import evaluate_annotations, compute_roc
-from agents import ProteinCentricAgent, Protein2GOHeuristician
+from agents import ProteinCentricAgent
 from agents.models import gemini_model as camel_model
-from sklearn.metrics import roc_curve, auc
 import math
 import re
 import logging
