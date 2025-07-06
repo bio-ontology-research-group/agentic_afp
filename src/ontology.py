@@ -390,7 +390,7 @@ class Ontology(object):
             term_id (str): The GO term ID (e.g., 'GO:0008150')
 
         Returns:
-            dict: Dictionary containing term information, or None if term doesn't exist
+            str: A formatted string containing the term's name, definition, namespace, and taxon constraints.
         """
         if self.has_term(term_id):
             term = self.ont[term_id]
@@ -398,13 +398,19 @@ class Ontology(object):
             children = [self.get_term_name(cid) for cid in children if self.has_term(cid)]
             parents = term.get('is_a', [])
             parents = [self.get_term_name(pid) for pid in parents if self.has_term(pid)]
+            information = f"""
+            name: {term.get('name', 'Unknown')}
+            definition: {term.get('definition', 'No definition available')}
+            namespace: {term.get('namespace', 'Unknown')}
+            """
+            return information
             return {
                 'id': term_id,
                 'name': term.get('name', 'Unknown'),
                 'definition': term.get('definition', 'No definition available'),
                 'namespace': term.get('namespace', 'Unknown'),
-                'parents': parents,
-                'children': children,
+                # 'parents': parents,
+                # 'children': children,
                 'alt_ids': term.get('alt_ids', []),
                 'in_taxon': term.get('in_taxon', []),
                 'never_in_taxon': term.get('never_in_taxon', [])

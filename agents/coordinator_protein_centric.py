@@ -9,6 +9,7 @@ from agents import ProteinCentricAgent, Protein2GOHeuristician
 from agents.models import gemini_model as camel_model
 from sklearn.metrics import roc_curve, auc
 import math
+import re
 import logging
 logger = logging.getLogger(__name__)
 handler = logging.StreamHandler()
@@ -17,22 +18,17 @@ logger.setLevel(logging.DEBUG)
 
 
 def load_data(data_root, ont, model_name):
-    # load terms dict
     terms = pd.read_pickle(f'{data_root}/{ont}_terms.pkl')['terms'].values.flatten()
     terms_dict = {v: i for i, v in enumerate(terms)}
      
-    # load ontology
     ontology = Ontology(f'{data_root}/go.obo', with_rels=True, taxon_constraints_file=f'{data_root}/go-computed-taxon-constraints.obo')
 
-    # load predictions dataframe
     train_data_file = f'{data_root}/train_data.pkl'
     go_frequency = compute_frequency(train_data_file, terms_dict)
     
     preds_data_file = f'{data_root}/test_predictions_{model_name}.pkl'
     test_df = pd.read_pickle(preds_data_file)
 
-
-    
     return ontology, test_df, terms_dict, go_frequency
 
 
@@ -50,17 +46,22 @@ def compute_frequency(train_data_file, terms_dict):
         annotations = list(map(lambda x: set(x), annotations))
         
         frequency = {term: 0 for term in terms_dict.keys()}
-        
+
+        total_annotations = len(annotations)
         for annots in annotations:
-                for go_term in annots:
+            for go_term in annots:
                 if go_term in frequency:
                         frequency[go_term] += 1
 
         sorted_frequency = dict(sorted(frequency.items(), key=lambda x: x[1]))
-                        
+        
+        avg_frequency = sum(sorted_frequency.values()) / len(sorted_frequency)
+        std_frequency = math.sqrt(sum((x - avg_frequency) ** 2 for x in sorted_frequency.values()) / len(sorted_frequency))
+        min_frequency = min(sorted_frequency.values())
+        max_frequency = max(sorted_frequency.values())
+        print(f"Average frequency: {avg_frequency}, Std frequency: {std_frequency}, Min frequency: {min_frequency}, Max frequency: {max_frequency}. Total proteins: {len(annotations)}")
+        
         return sorted_frequency
-    
-
     
 
 class CoordinatorProteinCentricAgent(ChatAgent):
@@ -71,23 +72,14 @@ class CoordinatorProteinCentricAgent(ChatAgent):
         model = "mlp"
         run = 1
         
-        self.ontology, self.test_df, self.terms_dict, terms_frequency = load_data(self.data_root, ont, model)
+        self.ontology, self.test_df, self.terms_dict, self.term_frequency = load_data(self.data_root, ont, model)
 
 
-        self.less_frequent_terms = dict(list(terms_frequence.items())[:20])
+        self.less_frequent_terms = dict(list(self.term_frequency.items())[:20])
         print(f"Less frequent terms: {self.less_frequent_terms}")
 
-        
-        leaf_nodes = self.ontology.get_leaf_nodes(list(self.terms_dict.keys()))
-        self.go_info = [(go_id, self.ontology.get_term_name(go_id), self.ontology.get_term_definition(go_id)) for go_id in leaf_nodes]
-        
         self.protein_agents = []
 
-        # self.test_tool = FunctionTool(self.test)
-        # self.tool_create_protein_agents = FunctionTool(self.create_protein_agents)
-        # self.tool_query_protein_agents = FunctionTool(self.query_protein_agents)
-        # self.tool_update_predictions = FunctionTool(self.update_predictions)
-        
         context = f"""You are a coordinator agent responsible for
         managing . All the proteins are part of
         the same genome. You have access to genome-level
@@ -127,15 +119,20 @@ Output format:
         if verbose:
             print(f"\n\n\nGeneral information about protein {idx}: {general_information}")
 
-        # You found this information: {output}
-        analysis_prompt = f"""
-For each relevant GO term suggested (including Interpro and Taxa), provide:
-- Obtain GO term information using the get_go_term_info tool
-- Current score vs. recommended score
-- Supporting evidence (InterPro/Diamond/literature,heuristic)
-- Conflicting evidence and resolution
-- Confidence level (high/medium/low)
+        go_terms = set(re.findall(r'\bGO:\d+', general_information))
+        go_terms_info = [protein_agent.get_go_term_info(go_term) for go_term in go_terms]
+        go_terms_info = "\n".join(go_terms_info)
 
+        
+        analysis_prompt = f""" You have now this information about the GO terms you discussed before {go_terms_info}.
+
+For each relevant GO term suggested:
+- Analyze annotation frequency: terms with low frequency should might be underrepresented and might be plausible. Consider a term underrepresented if its frequency is below 200
+- Analyze supporting evidence (InterPro/Diamond/literature,heuristic) for each plausible term.
+- If there is conflicting evidence, provide your resolution
+- Provide Current score vs. recommended score. We want to minimize the amount of changes, so only update by incrementing or decrementing the score by 0.2 maximum.
+- Confidence level (high/medium/low)
+Output your report with all the points above in a structured format. Annotation frequency is based on the training data and is an important factor in your analysis.
 
 """
             
@@ -143,12 +140,9 @@ For each relevant GO term suggested (including Interpro and Taxa), provide:
         if verbose:
             print(f"\n\n\nConstraint analysis for protein {idx}: {constraint_analysis}")
 
-        # After your first analysis you have the following information: {output}.
         analysis_2_prompt = f"""
         Perfom a second analysis. Follow these examples:
-        - If you found a GO term is plausible but too specific, suggest a more general term.
-        - If a GO term is plausible but not supported by InterPro, suggest a score based on Diamond score or heuristic knowledge.
-       
+        - Make sure the suggested changes are not that large. We aim tominimize the changes, so only update by incrementing or decrementing the score by 0.2 maximum.
         """
 
         constraint_analysis_2 = protein_agent.step(analysis_2_prompt).msgs[0].content
@@ -156,13 +150,7 @@ For each relevant GO term suggested (including Interpro and Taxa), provide:
         
         updating_prompt = f"""
 Apply your analysis to update GO term scores. Perform the update and also provide a rationale for each change. If no changes are needed, return 'No changes needed'. 
-
-Output format:
-- If changes needed: JSON list with {{go_term, old_score, new_score, rationale}}
-- If no changes: "No changes needed"
-
-Only include terms with justified score modifications.
-"""
+        """
 
         final_decision = protein_agent.step(updating_prompt).msgs[0].content
         if verbose:
@@ -184,7 +172,7 @@ Only include terms with justified score modifications.
             ProteinCentricAgent: An instance of the ProteinCentricAgent class.
         """
         row = self.test_df.iloc[idx]
-        return ProteinCentricAgent(idx, self.ont, self.ontology, row, self.terms_dict)
+        return ProteinCentricAgent(idx, self.ont, self.ontology, row, self.terms_dict, self.term_frequency)
 
     def create_protein_agents(self, idxs):
         """

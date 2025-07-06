@@ -25,21 +25,23 @@ logger.setLevel(logging.INFO)
 DATA_ROOT = 'data'
 
 class GOTerm():
-    def __init__(self, go_id, info, predicted_score, diamond_score):
+    def __init__(self, go_id, info, predicted_score, diamond_score, frequency=None):
         self.go_id = go_id
         self.info = info
         self.predicted_score = predicted_score
         self.diamond_score = diamond_score
-
+        self.frequency = frequency
+        
+        
     def __repr__(self):
-        return f"GOTerm(go_id={self.go_id}, info={self.info}, predicted_score={self.predicted_score}, diamond_score={self.diamond_score})"
+        return f"Start of information for {self.go_id}:\n Predicted_score={self.predicted_score}, diamond_score={self.diamond_score}, annotation_frequency={self.frequency}, info={self.info}\nEnd of information for {self.go_id}.\n"
 
     def __str__(self):
-        return f"{self.go_id} ({self.info}) - Predicted Score: {self.predicted_score}, Diamond Score: {self.diamond_score}"
+        return f"Start of information for {self.go_id}:\n Predicted Score: {self.predicted_score}, diamond Score: {self.diamond_score}. Annotation Frequency: {self.frequency if self.frequency is not None else 'N/A'}, {self.info}\nEnd of information for {self.go_id}.\n"
 
         
 class ProteinCentricAgent(ChatAgent):
-    def __init__(self, idx, ont, ontology, data_row, terms_dict, *args, **kwargs):
+    def __init__(self, idx, ont, ontology, data_row, terms_dict, term_frequency, *args, **kwargs):
         if not isinstance(data_row, pd.Series):
             raise ValueError(f"data_row must be a pandas Series object. Got {type(data_row)} instead.")
 
@@ -48,8 +50,9 @@ class ProteinCentricAgent(ChatAgent):
         self.go = ontology
         self.data_row = data_row
         self.interpro_to_go = pd.read_csv(f"{DATA_ROOT}/interpro2go.tsv", sep='\t')
-
+        
         self.terms_dict = terms_dict
+        self.term_frequency = term_frequency
         
         self.sequence = self.data_row['sequences']
         self.interpros = self.get_interpro_annotations()
@@ -98,8 +101,9 @@ based on the information you have access to.  """
             go_set = self.interpro_to_go[self.interpro_to_go['interpro_id'] == interpro]['go_id'].values
             gos.extend(go_set)
 
+        return gos
         gos = list(set([go for go in gos if go in self.terms_dict]))  # Ensure unique GO terms and valid ones
-        go_objects = [GOTerm(go_id=go, info=self.go.get_term_info(go), predicted_score=self.query_score(go), diamond_score=self.get_diamond_score(go)) for go in gos]
+        go_objects = [self.create_go_term(go) for go in gos]
 
         return go_objects
 
@@ -113,8 +117,7 @@ based on the information you have access to.  """
         """
         if go_term not in self.terms_dict:
             return f"GO term {go_term} not found in terms dictionary."
-
-        go = GOTerm(go_id=go_term, info=self.go.get_term_info(go_term), predicted_score=self.query_score(go_term), diamond_score=self.get_diamond_score(go_term))
+        go = self.create_go_term(go_term)
         return str(go)
         
     
@@ -166,11 +169,15 @@ based on the information you have access to.  """
             return {"in_taxon": [], "never_in_taxon": []}
         
         taxa = self.go.taxon_map[org]
-        in_taxon = [GOTerm(go_id=go, info=self.go.get_term_info(go), predicted_score=self.query_score(go), diamond_score=self.get_diamond_score(go)) for go in taxa[0] if go in self.terms_dict]
-        never_in_taxon = [GOTerm(go_id=go, info=self.go.get_term_info(go), predicted_score=self.query_score(go), diamond_score=self.get_diamond_score(go)) for go in taxa[1] if go in self.terms_dict]
 
-        in_taxon = [str(go_obj) for go_obj in in_taxon]
-        never_in_taxon = [str(go_obj) for go_obj in never_in_taxon]
+        in_taxon = taxa[0]
+        never_in_taxon = taxa[1]
+        
+        # in_taxon = [self.create_go_term(go) for go in in_taxon if go in self.terms_dict]
+        # never_in_taxon = [self.create_go_term(go) for go in never_in_taxon if go in self.terms_dict]
+
+        # in_taxon = [str(go_obj) for go_obj in in_taxon]
+        # never_in_taxon = [str(go_obj) for go_obj in never_in_taxon]
         
         taxon_constraints = {"in_taxon": in_taxon, "never_in_taxon": never_in_taxon}
         # taxon_constraints = {"in_taxon": taxa[0], "never_in_taxon": taxa[1]}
@@ -178,7 +185,10 @@ based on the information you have access to.  """
 
         
         return taxon_constraints
-        
+
+    def create_go_term(self, go_term: str) -> GOTerm:
+        return GOTerm(go_id=go_term, info=self.go.get_term_info(go_term), predicted_score=self.query_score(go_term), diamond_score=self.get_diamond_score(go_term), frequency=self.term_frequency[go_term])
+    
     def query_score(self, go_term: str) -> float:
         """
         Query the initial score for a specific GO term.
@@ -202,6 +212,7 @@ based on the information you have access to.  """
             go_term (str): The GO term identifier to update.
             score (float): The new score for the GO term.
         """
+        # initial_score = self.da
         if go_term in self.terms_dict:
             go_id = self.terms_dict.get(go_term)
             self.data_row[f'{self.ont}_preds'][go_id] = score

@@ -15,13 +15,13 @@ def main(data_root, ont, test):
     # new_test_df.to_pickle(output_file)
     
     if test:
-        number_of_proteins = 1
-        prot_id = 4
+        number_of_proteins = 10
+        prot_id = 1
     
 
     for i in tqdm(range(number_of_proteins)):
         try:
-            coordinator.protein_step(prot_id, verbose=True)
+            coordinator.protein_step(i, verbose=True)
             new_test_df = coordinator.test_df
             new_test_df.to_pickle(output_file)
             print("__________________________________")

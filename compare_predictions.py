@@ -57,9 +57,9 @@ def compare_list_columns(df1, df2, ont, column_name='preds', tolerance=1e-9):
 # Example usage
 if __name__ == "__main__":
     # Create sample DataFrames
-    ont = "bp"
+    ont = "mf"
     df1 = pd.read_pickle('data/test_predictions_mlp.pkl')
-    df2 = pd.read_pickle('data/test_predictions_refined.pkl')
+    df2 = pd.read_pickle('data/test_predictions_refined_dumb.pkl')
         
     # Test equal DataFrames
     result = compare_list_columns(df1, df2, ont)
