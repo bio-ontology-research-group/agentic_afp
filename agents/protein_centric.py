@@ -2,7 +2,6 @@ import sys
 import os
 import pandas as pd
 import ast
-# Add the project root directory to the Python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from agents.models import gemini_model as camel_model
@@ -57,10 +56,7 @@ class ProteinCentricAgent(ChatAgent):
         self.sequence = self.data_row['sequences']
         self.interpros = self.get_interpro_annotations()
         
-        # diamond_tool = FunctionTool(self.get_diamond_score)
         interpro_tool = FunctionTool(self.get_interpro_annotations)
-        # score_query_tool = FunctionTool(self.query_score)
-        # uniprot_tool = FunctionTool(self.get_uniprot_information)
         update_tool = FunctionTool(self.update_predictions)
         taxon_constraints_tool = FunctionTool(self.get_taxon_constraints)
         get_go_term_info_tool = FunctionTool(self.get_go_term_info)
@@ -82,7 +78,13 @@ definition of interpro annotations, (2) the diamond score for the
 term. You will be asked to increase or decrease the score of the term
 based on the information you have access to.  """
         
-        super().__init__(*args, system_message=context, tools=[interpro_tool, taxon_constraints_tool, update_tool, get_go_term_info_tool], model=camel_model, **kwargs)
+        super().__init__(*args, system_message=context,
+                         tools=[interpro_tool,
+                                taxon_constraints_tool,
+                                update_tool,
+                                get_go_term_info_tool],
+                         model=camel_model,
+                         **kwargs)
 
     def get_interpro_annotations(self) -> list:
         """
@@ -90,9 +92,9 @@ based on the information you have access to.  """
         Args:
             sequence (str): The protein sequence to analyze.
         Returns:
-            list: A list of GOTerm objects representing the InterPro annotations.
+            list: A list of GO ids
         """
-        # return []
+
         interpros = self.data_row['interpros']
         gos = []
         for interpro in interpros:
@@ -102,10 +104,9 @@ based on the information you have access to.  """
             gos.extend(go_set)
 
         return gos
-        gos = list(set([go for go in gos if go in self.terms_dict]))  # Ensure unique GO terms and valid ones
-        go_objects = [self.create_go_term(go) for go in gos]
-
-        return go_objects
+        # gos = list(set([go for go in gos if go in self.terms_dict]))  # Ensure unique GO terms and valid ones
+        # go_objects = [self.create_go_term(go) for go in gos]
+        # return go_objects
 
     def get_go_term_info(self, go_term: str) -> str:
         """
@@ -120,17 +121,6 @@ based on the information you have access to.  """
         go = self.create_go_term(go_term)
         return str(go)
         
-    
-    def is_in_interpro(self, go_term: str) -> bool:
-        """
-        Check if a GO term is associated with any InterPro annotations.
-        Args:
-            go_term (str): The GO term to check.
-        Returns:
-            bool: True if the GO term is associated with InterPro annotations, False otherwise.
-        """
-        return go_term in self.interpros
-
     def get_diamond_score(self, go_term: str) -> float:
         """
         Retrieve the diamond score for a given sequence and hypothesis function.
@@ -139,9 +129,7 @@ based on the information you have access to.  """
             go_term (str): The GO term to analyze.
         Returns:
             float: The diamond score for given hypothesis function. If the GO term is not found, returns None.
-    """
-    
-
+        """
         preds = self.data_row['diam_preds']
 
         if go_term not in preds:
@@ -162,7 +150,7 @@ based on the information you have access to.  """
         """
         Retrieve taxon constraints for the current sequence.
         Returns:
-            List[str]: A list of taxon constraints.
+            dict: A dictionary containing 'in_taxon' and 'never_in_taxon' lists.
         """
         org = self.data_row['orgs']
         if not org in self.go.taxon_map:
@@ -173,21 +161,15 @@ based on the information you have access to.  """
         in_taxon = taxa[0]
         never_in_taxon = taxa[1]
         
-        # in_taxon = [self.create_go_term(go) for go in in_taxon if go in self.terms_dict]
-        # never_in_taxon = [self.create_go_term(go) for go in never_in_taxon if go in self.terms_dict]
-
-        # in_taxon = [str(go_obj) for go_obj in in_taxon]
-        # never_in_taxon = [str(go_obj) for go_obj in never_in_taxon]
-        
         taxon_constraints = {"in_taxon": in_taxon, "never_in_taxon": never_in_taxon}
-        # taxon_constraints = {"in_taxon": taxa[0], "never_in_taxon": taxa[1]}
-
-
-        
         return taxon_constraints
 
     def create_go_term(self, go_term: str) -> GOTerm:
-        return GOTerm(go_id=go_term, info=self.go.get_term_info(go_term), predicted_score=self.query_score(go_term), diamond_score=self.get_diamond_score(go_term), frequency=self.term_frequency[go_term])
+        return GOTerm(go_id=go_term,
+                      info=self.go.get_term_info(go_term),
+                      predicted_score=self.query_score(go_term),
+                      diamond_score=self.get_diamond_score(go_term),
+                      frequency=self.term_frequency[go_term])
     
     def query_score(self, go_term: str) -> float:
         """
@@ -199,8 +181,6 @@ based on the information you have access to.  """
         """
         if go_term not in self.terms_dict:
             return None
-            # return "GO term not found in terms dictionary. Ignore this term."
-            # raise ValueError(f"GO term {go_term} not found in terms dictionary.")
         
         idx = self.terms_dict[go_term]
         predictions = self.data_row[f'{self.ont}_preds']
@@ -216,32 +196,4 @@ based on the information you have access to.  """
         if go_term in self.terms_dict:
             go_id = self.terms_dict.get(go_term)
             self.data_row[f'{self.ont}_preds'][go_id] = score
-
-    def get_top_terms(self):
-        predictions = self.data_row[f'{self.ont}_preds']
-        terms = list(self.terms_dict.keys())
-        terms = self.go.get_leaf_nodes(terms)
-        terms_with_scores = {go: predictions[self.terms_dict[go]] for go in terms}
-        sorted_terms = sorted(terms_with_scores.items(), key=lambda item: item[1], reverse=True)
-        highest_terms = sorted_terms[:10]
-        return highest_terms
-        
-def test_diamond_agent():
-    data_root = '../data'
-    ont = 'mf'
-    test_df = pd.read_pickle(f"{data_root}/{ont}/time_data_esm.pkl")
-    sequence = test_df['sequences'].values[0]
-    print(f"Testing sequence: {sequence}")
-
-    initial_scores = {'GO:0004553': 0.28049648, 'GO:0016798': 0.50550914, 'GO:0005102': 0.14764625, 'GO:0019899': 0.11700932, 'GO:0005515': 0.6157712, 'GO:0003824': 0.13832442, 'GO:0005488': 0.791075}
-
-    prompt = f"Sequence: {sequence}\nInitial GO term scores: {initial_scores}\nPlease refine the scores based on the sequence and GO terms. Provide only the scores, not additional text."
-    agent = DiamondAgent(ont, data_root)
-    response = agent.step(prompt)
-    response  = process_diamond_output(response.msgs[0].content)
-    print(f"Agent's interpretation: {response}")
-
-if __name__ == "__main__":
-    test_diamond_agent()
-
-
+            

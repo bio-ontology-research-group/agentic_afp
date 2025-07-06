@@ -59,7 +59,7 @@ if __name__ == "__main__":
     # Create sample DataFrames
     ont = "mf"
     df1 = pd.read_pickle('data/test_predictions_mlp.pkl')
-    df2 = pd.read_pickle('data/test_predictions_refined_dumb.pkl')
+    df2 = pd.read_pickle('data/test_predictions_refined.pkl')
         
     # Test equal DataFrames
     result = compare_list_columns(df1, df2, ont)
