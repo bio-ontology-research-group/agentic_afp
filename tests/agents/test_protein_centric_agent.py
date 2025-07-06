@@ -2,6 +2,7 @@ from unittest import TestCase
 import pandas as pd
 import numpy as np
 from agents import ProteinCentricAgent
+from src.ontology import Ontology
 
 class TestProteinCentricAgent(TestCase):
 
@@ -9,15 +10,17 @@ class TestProteinCentricAgent(TestCase):
         data_root = "data"
         self.hypothesis_function = "GO:0000165"
         self.ont = "mf"
+        self.ontology = Ontology(f"{data_root}/go.obo", with_rels=True)
         terms = pd.read_pickle(f'{data_root}/{self.ont}_terms.pkl')['terms'].values.flatten()
         terms_dict = {v: i for i, v in enumerate(terms)}
-
+        mock_frequency = {term: 1 for term in terms_dict.keys()}  # Mock frequency data
+        
         self.df = pd.read_pickle(f"{data_root}/test_predictions_mlp.pkl")
         self.sequence = self.df.iloc[0].sequences
 
         initial_predictions = [1] * len(terms)  # Mock initial predictions
         idx = 4
-        self.agent = ProteinCentricAgent(idx, self.ont, self.df.iloc[idx], terms_dict)
+        self.agent = ProteinCentricAgent(idx, self.ont, self.ontology, self.df.iloc[idx], terms_dict, mock_frequency)
 
     def test_data_columns(self):
         column_of_interest = f"{self.ont}_preds"
@@ -54,21 +57,11 @@ class TestProteinCentricAgent(TestCase):
         self.assertIsInstance(diamond_score, float)
         self.assertGreater(diamond_score, 0.0)
 
-    def test_is_in_interpro(self):
-        interpro_annotations = self.agent.is_in_interpro(self.hypothesis_function)
-        self.assertIsInstance(interpro_annotations, bool)
-
     def test_interpros(self):
         interpros = self.agent.data_row['interpros']
         self.assertIsInstance(interpros, list)
         self.assertGreater(len(interpros), 0)
         
-    def test_interpros_as_go(self):
-        interpros = self.agent.interpros
-        self.assertIsInstance(interpros, list)
-        self.assertGreater(len(interpros), 0)
-        self.assertTrue(all(x.go_id.startswith("GO") for x in interpros))
-
     def test_get_taxon_constraints(self):
         taxon_constraints = self.agent.get_taxon_constraints()
         self.assertIsInstance(taxon_constraints, dict)

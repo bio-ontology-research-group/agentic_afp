@@ -349,7 +349,7 @@ def search_uniprot(protein_sequence: str, hypothesized_go_function:
     print(f"Checking for GO function: {hypothesized_go_function}")
 
 
-    ontology = Ontology("data/go-basic.obo", with_rels=True)
+    ontology = Ontology("data/go.obo", with_rels=True)
     
     # Step 1: Check if database exists, download if needed
     if blast_db_path is None:

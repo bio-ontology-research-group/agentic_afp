@@ -8,11 +8,11 @@ class TestGetLeafNodes(TestCase):
     def setUp(self):
         # This method will run before each test
         self.ontology = Ontology("data/go.obo", with_rels=True)
-        terms_file = "data/cc/terms.pkl"
-        self.terms = pd.read_pickle(terms_file).gos.values.tolist()
+        terms_file = "data/cc_terms.pkl"
+        self.terms = pd.read_pickle(terms_file).terms.values.tolist()
         self.terms_dict = {term: idx for idx, term in enumerate(self.terms)}
-        self.predictions_file = "data/cc/predictions_agentic_go_1.pkl"
-        self.terms = pd.read_pickle(terms_file).gos.values.tolist()
+        self.predictions_file = "data/test_data.pkl"
+        self.terms = pd.read_pickle(terms_file).terms.values.tolist()
     
     def test_get_leaf_nodes(self):
         leaf_nodes = self.ontology.get_leaf_nodes(self.terms)
