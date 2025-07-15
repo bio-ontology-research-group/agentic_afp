@@ -1,7 +1,7 @@
 import pandas as pd
 import torch as th
 import numpy as np
-import dgl
+# import dgl
 
 
 def get_data(df, terms_dict, features_length):
@@ -71,64 +71,64 @@ def load_data(data_root, features_length=2560, test_data_file="test_data.pkl"):
     )
 
 
-def load_ppi_data(
-    data_root,
-    ont,
-    features_length=2560,
-    features_column="esm2",
-    test_data_file="test_data.pkl",
-    ppi_graph_file="ppi_test.bin",
-):
+# def load_ppi_data(
+    # data_root,
+    # ont,
+    # features_length=2560,
+    # features_column="esm2",
+    # test_data_file="test_data.pkl",
+    # ppi_graph_file="ppi_test.bin",
+# ):
 
-    terms_df = pd.read_pickle(f"{data_root}/{ont}/terms.pkl")
-    terms = terms_df["gos"].values.flatten()
-    terms_dict = {v: i for i, v in enumerate(terms)}
-    print("Terms", len(terms))
+    # terms_df = pd.read_pickle(f"{data_root}/{ont}/terms.pkl")
+    # terms = terms_df["gos"].values.flatten()
+    # terms_dict = {v: i for i, v in enumerate(terms)}
+    # print("Terms", len(terms))
 
-    mf_df = pd.read_pickle(f"{data_root}/mf/terms.pkl")
-    mfs = mf_df["gos"].values
-    mfs_dict = {v: k for k, v in enumerate(mfs)}
+    # mf_df = pd.read_pickle(f"{data_root}/mf/terms.pkl")
+    # mfs = mf_df["gos"].values
+    # mfs_dict = {v: k for k, v in enumerate(mfs)}
 
-    ipr_df = pd.read_pickle(f"{data_root}/{ont}/interpros.pkl")
-    iprs = ipr_df["interpros"].values
-    iprs_dict = {v: k for k, v in enumerate(iprs)}
+    # ipr_df = pd.read_pickle(f"{data_root}/{ont}/interpros.pkl")
+    # iprs = ipr_df["interpros"].values
+    # iprs_dict = {v: k for k, v in enumerate(iprs)}
 
-    feat_dict = None
+    # feat_dict = None
 
-    if features_column == "interpros":
-        features_length = len(iprs_dict)
-        feat_dict = iprs_dict
-    elif features_column != "esm2":
-        features_length = len(mfs_dict)
-        feat_dict = mfs_dict
+    # if features_column == "interpros":
+        # features_length = len(iprs_dict)
+        # feat_dict = iprs_dict
+    # elif features_column != "esm2":
+        # features_length = len(mfs_dict)
+        # feat_dict = mfs_dict
 
-    train_df = pd.read_pickle(f"{data_root}/{ont}/train_data.pkl")
-    valid_df = pd.read_pickle(f"{data_root}/{ont}/valid_data.pkl")
-    test_df = pd.read_pickle(f"{data_root}/{ont}/{test_data_file}")
+    # train_df = pd.read_pickle(f"{data_root}/{ont}/train_data.pkl")
+    # valid_df = pd.read_pickle(f"{data_root}/{ont}/valid_data.pkl")
+    # test_df = pd.read_pickle(f"{data_root}/{ont}/{test_data_file}")
 
-    df = pd.concat([train_df, valid_df, test_df])
-    graphs, nids = dgl.load_graphs(f"{data_root}/{ont}/{ppi_graph_file}")
+    # df = pd.concat([train_df, valid_df, test_df])
+    # graphs, nids = dgl.load_graphs(f"{data_root}/{ont}/{ppi_graph_file}")
 
-    data, labels = get_data(df, feat_dict, terms_dict, features_length, features_column)
-    graph = graphs[0]
-    graph.ndata["feat"] = data
-    graph.ndata["labels"] = labels
-    train_nids, valid_nids, test_nids = (
-        nids["train_nids"],
-        nids["valid_nids"],
-        nids["test_nids"],
-    )
-    return (
-        feat_dict,
-        terms_dict,
-        graph,
-        train_nids,
-        valid_nids,
-        test_nids,
-        data,
-        labels,
-        test_df,
-    )
+    # data, labels = get_data(df, feat_dict, terms_dict, features_length, features_column)
+    # graph = graphs[0]
+    # graph.ndata["feat"] = data
+    # graph.ndata["labels"] = labels
+    # train_nids, valid_nids, test_nids = (
+        # nids["train_nids"],
+        # nids["valid_nids"],
+        # nids["test_nids"],
+    # )
+    # return (
+        # feat_dict,
+        # terms_dict,
+        # graph,
+        # train_nids,
+        # valid_nids,
+        # test_nids,
+        # data,
+        # labels,
+        # test_df,
+    # )
 
 
 def load_normal_forms(go_file):

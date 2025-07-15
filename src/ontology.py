@@ -53,13 +53,18 @@ def is_exp_code(code):
 
 class Ontology(object):
 
-    def __init__(self, filename='data/go-basic.obo', with_rels=True):
+    def __init__(self, filename, with_rels=True, taxon_constraints_file=None):
         self.ont = self.load(filename, with_rels)
         self.ic = None
         self.ic_norm = 0.0
         self.ancestors = {}
         self.leaf_nodes = None
-
+        self._taxon_map = None
+        # Load taxon constraints if file is provided
+        if taxon_constraints_file:
+            self.load_taxon_constraints(taxon_constraints_file)
+        
+            
     def has_term(self, term_id):
         return term_id in self.ont
 
@@ -87,6 +92,7 @@ class Ontology(object):
             else:
                 min_n = min([cnt[x] for x in parents])
 
+            parents = {x: cnt[x] for x in parents}
             self.ic[go_id] = math.log(min_n / n, 2)
             self.ic_norm = max(self.ic_norm, self.ic[go_id])
     
@@ -117,6 +123,10 @@ class Ontology(object):
                     obj['regulates'] = list()
                     obj['alt_ids'] = list()
                     obj['is_obsolete'] = False
+                    obj['definition'] = None
+                    # Initialize taxon constraint lists
+                    obj['in_taxon'] = list()
+                    obj['never_in_taxon'] = list()
                     continue
                 elif line == '[Typedef]':
                     if obj is not None:
@@ -142,6 +152,14 @@ class Ontology(object):
                         obj['name'] = l[1]
                     elif l[0] == 'is_obsolete' and l[1] == 'true':
                         obj['is_obsolete'] = True
+                    elif l[0] == 'def':
+                        def_text = l[1]
+                        if def_text.startswith('"') and '"' in def_text[1:]:
+                            end_quote = def_text.find('"', 1)
+                            obj['definition'] = def_text[1:end_quote]
+                        else:
+                            obj['definition'] = def_text
+
             if obj is not None:
                 ont[obj['id']] = obj
         for term_id in list(ont.keys()):
@@ -159,6 +177,111 @@ class Ontology(object):
                     ont[p_id]['children'].add(term_id)
      
         return ont
+
+    def load_taxon_constraints(self, filename):
+        """
+        Load taxon constraints from a taxon constraints OBO file.
+        
+        Args:
+            filename (str): Path to the taxon constraints OBO file
+        """
+        current_term_id = None
+        
+        with open(filename, 'r') as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                    
+                if line == '[Term]':
+                    current_term_id = None
+                    continue
+                elif line.startswith('id: '):
+                    current_term_id = line.split(': ')[1]
+                    # Initialize taxon constraint lists if term exists in ontology
+                    if current_term_id in self.ont:
+                        if 'in_taxon' not in self.ont[current_term_id]:
+                            self.ont[current_term_id]['in_taxon'] = list()
+                        if 'never_in_taxon' not in self.ont[current_term_id]:
+                            self.ont[current_term_id]['never_in_taxon'] = list()
+                elif line.startswith('relationship: ') and current_term_id:
+                    # Parse relationship lines
+                    rel_parts = line.split(': ')[1].split()
+                    if len(rel_parts) >= 2:
+                        rel_type = rel_parts[0]
+                        taxon_id = rel_parts[1].split(':')[1]
+                        
+                        if current_term_id in self.ont:
+                            if rel_type == 'RO:0002162':  # in_taxon
+                                self.ont[current_term_id]['in_taxon'].append(taxon_id)
+                            elif rel_type == 'RO:0002161':  # never_in_taxon
+                                self.ont[current_term_id]['never_in_taxon'].append(taxon_id)
+                elif line.startswith('property_value: ') and current_term_id:
+                    # Parse property_value lines
+                    prop_parts = line.split(': ')[1].split()
+                    if len(prop_parts) >= 2:
+                        prop_type = prop_parts[0]
+                        taxon_id = prop_parts[1].split(':')[1]
+                        
+                        if current_term_id in self.ont:
+                            if prop_type == 'RO:0002162':  # in_taxon
+                                self.ont[current_term_id]['in_taxon'].append(taxon_id)
+                            elif prop_type == 'RO:0002161':  # never_in_taxon
+                                self.ont[current_term_id]['never_in_taxon'].append(taxon_id)
+
+    def get_in_taxon(self, term_id):
+        """
+        Get the list of taxa that this term is constrained to be in.
+        
+        Args:
+            term_id (str): The GO term ID
+            
+        Returns:
+            list: List of taxon IDs (e.g., ['NCBITaxon:2759'])
+        """
+        if self.has_term(term_id):
+            return self.ont[term_id].get('in_taxon', [])
+        return []
+
+    def get_never_in_taxon(self, term_id):
+        """
+        Get the list of taxa that this term is constrained to never be in.
+        
+        Args:
+            term_id (str): The GO term ID
+            
+        Returns:
+            list: List of taxon IDs (e.g., ['NCBITaxon:4896'])
+        """
+        if self.has_term(term_id):
+            return self.ont[term_id].get('never_in_taxon', [])
+        return []
+
+    def is_valid_for_taxon(self, term_id, taxon_id):
+        """
+        Check if a GO term is valid for a given taxon based on taxon constraints.
+        
+        Args:
+            term_id (str): The GO term ID
+            taxon_id (str): The taxon ID (e.g., 'NCBITaxon:9606')
+            
+        Returns:
+            bool: True if the term is valid for the taxon, False otherwise
+        """
+        if not self.has_term(term_id):
+            return False
+            
+        # Check never_in_taxon constraints
+        never_in_taxon = self.get_never_in_taxon(term_id)
+        if taxon_id in never_in_taxon:
+            return False
+            
+        # Check in_taxon constraints
+        in_taxon = self.get_in_taxon(term_id)
+        if in_taxon and taxon_id not in in_taxon:
+            return False
+            
+        return True
 
     def get_ancestors(self, term_id):
         if term_id not in self.ont:
@@ -185,7 +308,6 @@ class Ontology(object):
             prop_terms |= self.get_anchestors(term_id)
         return prop_terms
 
-
     def get_parents(self, term_id):
         if term_id not in self.ont:
             return set()
@@ -194,7 +316,6 @@ class Ontology(object):
             if parent_id in self.ont:
                 term_set.add(parent_id)
         return term_set
-
 
     def get_namespace_terms(self, namespace):
         terms = set()
@@ -233,9 +354,102 @@ class Ontology(object):
         self.leaf_nodes = leaf_nodes
         return self.leaf_nodes
     
+    def get_term_name(self, term_id):
+        """
+        Get the human-readable name/label of a GO term.
+
+        Args:
+            term_id (str): The GO term ID (e.g., 'GO:0008150')
+
+        Returns:
+            str: The name/label of the term, or None if term doesn't exist
+        """
+        if self.has_term(term_id):
+            return self.ont[term_id].get('name', None)
+        return None
+
+    def get_term_definition(self, term_id):
+        """
+        Get the definition of a GO term.
+
+        Args:
+            term_id (str): The GO term ID (e.g., 'GO:0008150')
+
+        Returns:
+            str: The definition of the term, or None if term doesn't exist or has no definition
+        """
+        if self.has_term(term_id):
+            return self.ont[term_id].get('definition', None)
+        return None
+
+    def get_term_info(self, term_id):
+        """
+        Get comprehensive information about a GO term including name, namespace, taxon constraints, etc.
+
+        Args:
+            term_id (str): The GO term ID (e.g., 'GO:0008150')
+
+        Returns:
+            str: A formatted string containing the term's name, definition, namespace, and taxon constraints.
+        """
+        if self.has_term(term_id):
+            term = self.ont[term_id]
+            children = term.get('children', set())
+            children = [self.get_term_name(cid) for cid in children if self.has_term(cid)]
+            parents = term.get('is_a', [])
+            parents = [self.get_term_name(pid) for pid in parents if self.has_term(pid)]
+            information = f"""
+            name: {term.get('name', 'Unknown')}
+            definition: {term.get('definition', 'No definition available')}
+            namespace: {term.get('namespace', 'Unknown')}
+            """
+            return information
+            return {
+                'id': term_id,
+                'name': term.get('name', 'Unknown'),
+                'definition': term.get('definition', 'No definition available'),
+                'namespace': term.get('namespace', 'Unknown'),
+                # 'parents': parents,
+                # 'children': children,
+                'alt_ids': term.get('alt_ids', []),
+                'in_taxon': term.get('in_taxon', []),
+                'never_in_taxon': term.get('never_in_taxon', [])
+            }
+        return None
+
+    @property
+    def taxon_map(self):
+        """
+        Creates a dictionary where keys are taxon IDs and values are pairs of lists.
+        The first list contains GO terms that have an in_taxon constraint for that taxon.
+        The second list contains GO terms that have a never_in_taxon constraint for that taxon.
+        
+        Returns:
+            dict: Dictionary mapping taxon IDs to pairs of lists [in_taxon_terms, never_in_taxon_terms]
+        """
+        if self._taxon_map is not None:
+            return self._taxon_map
+
+        taxon_map = {}
+        
+        # Iterate through all terms in the ontology
+        for term_id, term in self.ont.items():
+            # Process in_taxon constraints
+            for taxon_id in term.get('in_taxon', []):
+                if taxon_id not in taxon_map:
+                    taxon_map[taxon_id] = [[], []]
+                taxon_map[taxon_id][0].append(term_id)
+                
+            # Process never_in_taxon constraints
+            for taxon_id in term.get('never_in_taxon', []):
+                if taxon_id not in taxon_map:
+                    taxon_map[taxon_id] = [[], []]
+                taxon_map[taxon_id][1].append(term_id)
+
+        self._taxon_map = taxon_map
+        return self._taxon_map
 
 
-    
 def read_fasta(filename):
     seqs = list()
     info = list()
@@ -307,6 +521,3 @@ class DataGenerator(object):
         else:
             self.reset()
             return self.next()
-
-
-    

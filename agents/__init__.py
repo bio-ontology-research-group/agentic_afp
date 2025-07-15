@@ -1,1 +1,2 @@
-from .protein import ProteinAgent
+from .protein_centric import ProteinCentricAgent
+from .coordinator_protein_centric import CoordinatorProteinCentricAgent
