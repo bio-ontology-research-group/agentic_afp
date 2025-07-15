@@ -31,35 +31,35 @@ def load_data(data_root, ont, model_name):
 
 
 def compute_frequency(train_data_file, terms_dict):
-        """
-        Compute the frequency of each GO term in the training data.
-        Args:
-                train_data_file (str): Path to the training data file.
-                terms_dict (dict): Dictionary mapping GO terms to indices.
-        Returns:
-                dict: A dictionary with GO terms as keys and their frequencies as values.
-        """
-        train_df = pd.read_pickle(train_data_file)
-        annotations = train_df['prop_annotations'].values
-        annotations = list(map(lambda x: set(x), annotations))
-        
-        frequency = {term: 0 for term in terms_dict.keys()}
+    """
+    Compute the frequency of each GO term in the training data.
+    Args:
+            train_data_file (str): Path to the training data file.
+            terms_dict (dict): Dictionary mapping GO terms to indices.
+    Returns:
+            dict: A dictionary with GO terms as keys and their frequencies as values.
+    """
+    train_df = pd.read_pickle(train_data_file)
+    annotations = train_df['prop_annotations'].values
+    annotations = list(map(lambda x: set(x), annotations))
+    
+    frequency = {term: 0 for term in terms_dict.keys()}
 
-        total_annotations = len(annotations)
-        for annots in annotations:
-            for go_term in annots:
-                if go_term in frequency:
-                        frequency[go_term] += 1
+    total_annotations = len(annotations)
+    for annots in annotations:
+        for go_term in annots:
+            if go_term in frequency:
+                    frequency[go_term] += 1
 
-        sorted_frequency = dict(sorted(frequency.items(), key=lambda x: x[1]))
-        
-        avg_frequency = sum(sorted_frequency.values()) / len(sorted_frequency)
-        std_frequency = math.sqrt(sum((x - avg_frequency) ** 2 for x in sorted_frequency.values()) / len(sorted_frequency))
-        min_frequency = min(sorted_frequency.values())
-        max_frequency = max(sorted_frequency.values())
-        print(f"Average frequency: {avg_frequency}, Std frequency: {std_frequency}, Min frequency: {min_frequency}, Max frequency: {max_frequency}. Total proteins: {len(annotations)}")
-        
-        return sorted_frequency
+    sorted_frequency = dict(sorted(frequency.items(), key=lambda x: x[1]))
+    
+    avg_frequency = sum(sorted_frequency.values()) / len(sorted_frequency)
+    std_frequency = math.sqrt(sum((x - avg_frequency) ** 2 for x in sorted_frequency.values()) / len(sorted_frequency))
+    min_frequency = min(sorted_frequency.values())
+    max_frequency = max(sorted_frequency.values())
+    print(f"Average frequency: {avg_frequency}, Std frequency: {std_frequency}, Min frequency: {min_frequency}, Max frequency: {max_frequency}. Total proteins: {len(annotations)}")
+    
+    return sorted_frequency
     
 
 class CoordinatorProteinCentricAgent(ChatAgent):
