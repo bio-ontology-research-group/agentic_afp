@@ -50,12 +50,15 @@ if __name__ == "__main__":
     print(f"Rows: {rows}")
     row_id = int(sys.argv[1]) if len(sys.argv) > 1 else None
     print(f"Row ID: {row_id}")
-    onts = ['bp']
-    test_filename = "data/test_predictions_mlp.pkl"
+    onts = ['bp', 'mf', 'cc']
+    # test_filename = "data/test_predictions_mlp.pkl"
+    # main(test_filename, rows=rows, onts=onts, row_id=row_id)
+
+    test_filename = "data/test_predictions_combined.pkl"
     main(test_filename, rows=rows, onts=onts, row_id=row_id)
 
     refined_test_filename = "data/test_predictions_refined.pkl"
     main(refined_test_filename, rows=rows, onts=onts, row_id=row_id)
 
-    propagated_test_filename = "data/test_predictions_refined_propagated.pkl"
-    main(propagated_test_filename, rows=rows, onts=onts, row_id=row_id)
+    # propagated_test_filename = "data/test_predictions_refined_propagated.pkl"
+    # main(propagated_test_filename, rows=rows, onts=onts, row_id=row_id)

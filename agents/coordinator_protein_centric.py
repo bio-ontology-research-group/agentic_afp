@@ -6,6 +6,8 @@ from agents.models import gemini_model as camel_model
 import math
 import re
 import logging
+from typing import List, Tuple
+
 logger = logging.getLogger(__name__)
 handler = logging.StreamHandler()
 logger.addHandler(handler)
@@ -67,7 +69,7 @@ class CoordinatorProteinCentricAgent(ChatAgent):
 
         self.data_root = "data"
         self.ont = ont
-        model = "mlp"
+        model = "abstracts"
         run = 1
         
         self.ontology, self.test_df, self.terms_dict, self.term_frequency = load_data(self.data_root, ont, model)
@@ -97,9 +99,10 @@ class CoordinatorProteinCentricAgent(ChatAgent):
     
         protein_agent = self.create_protein_agent(idx)
         uniprot_information = protein_agent.get_uniprot_information()
-        
+        abstracts = protein_agent.get_abstracts()
         starting_prompt = f"""You are analyzing protein with the
-following data: {uniprot_information}. 
+following data: {uniprot_information}.
+Related article abstracts: {abstracts}.
 Tasks:
 1. Retrieve InterPro domain annotations
 2. Identify taxonomic constraints
@@ -133,7 +136,7 @@ Output format:
 
 For each relevant GO term suggested:
 - Analyze annotation frequency: terms with low frequency should might be underrepresented and might be plausible. Consider a term underrepresented if its frequency is below 200
-- Analyze supporting evidence (InterPro/Diamond/literature,heuristic) for each plausible term.
+- Analyze supporting evidence (InterPro / Diamond / Abstracts) for each plausible term.
 - If there is conflicting evidence, provide your resolution
 - Provide Current score vs. recommended score. We want to minimize the amount of changes, so only update by incrementing or decrementing the score by 0.2 maximum.
 - Confidence level (high/medium/low)
