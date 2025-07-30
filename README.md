@@ -1,5 +1,9 @@
 # Multi-agent protein function prediction
 
+<div align="center">
+<img src="architecture.png" alt="Alt text" width="500">
+</div>
+
 ## Requirements
 
 - Python 3.10
@@ -42,26 +46,27 @@ python evaluate_all.py
 
 ## Molecular Function (MF) 
 | Prediction Type | Fmax  | Smin  | AUPR  | AUC   |
-|----------------|-------|-------|-------|------- |
-| Initial        | 0.642 | 7.364 | 0.642 | 0.957  |
-| Refined        | 0.660 | 7.240 | 0.658 | 0.959  |
-| Improvement    | +0.018| -0.124| +0.016| +0.002 |
+|----------------|-------|-------|-------|-------|
+| Initial (MLP)  | 0.642 | 7.364 | 0.642 | 0.957 |
+| MLP+DS         | 0.706 | 6.177 | 0.712 | 0.964 |
+| Gemini-Flash-2.0| 0.717| 5.861 | 0.697 | 0.943 |
+| GPT-4.1 nano   | 0.712 | 6.173 | 0.713 | 0.964 |
 
 ## Cellular Component (CC) 
-
 | Prediction Type | Fmax  | Smin  | AUPR  | AUC   |
 |----------------|-------|-------|-------|-------|
-| Initial        | 0.693 | 7.530 | 0.723 | 0.936 |
-| Refined        | 0.702 | 7.331 | 0.730 | 0.938 |
-| Improvement    | +0.009| -0.199| +0.007| +0.002|
+| Initial (MLP)  | 0.693 | 7.530 | 0.723 | 0.936 |
+| MLP+DS         | 0.718 | 6.365 | 0.755 | 0.949 |
+| Gemini-Flash-2.0| 0.718| 6.554 | 0.717 | 0.944 |
+| GPT-4.1 nano   | 0.727 | 6.333 | 0.748 | 0.949 |
 
 ## Biological Process (BP)
 | Prediction Type | Fmax  | Smin   | AUPR  | AUC   |
 |----------------|-------|--------|-------|-------|
-| Initial        | 0.414 | 27.440 | 0.354 | 0.868 |
-| Refined        | 0.425 | 27.433 | 0.361 | 0.870 |
-| Improvement    | +0.011| -0.007 | +0.007| +0.002|
-
+| Initial (MLP)  | 0.414 | 27.440 | 0.354 | 0.868 |
+| MLP+DS         | 0.463 | 25.495 | 0.402 | 0.874 |
+| Gemini-Flash-2.0| 0.470| 25.219 | 0.401 | 0.873 |
+| GPT-4.1 nano   | 0.460 | 25.515 | 0.401 | 0.874 |
 
 ## Explanations
 
