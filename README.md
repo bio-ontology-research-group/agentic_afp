@@ -17,11 +17,7 @@ conda env create -f environment.yml
 conda activate agenticfp
 ```
 
-## Run tests
 
-```bash
-pytest
-```
 ## Usage
 
 Initially, we introduce a ProteinCentricAgent, which takes initial GO
@@ -32,9 +28,7 @@ Diamond. It uses text descriptions of proteins and GO terms.
 To run:
 
 ```bash
-python run_protein_centric.py
-python propagate_annotations.py
-python evaluate_all.py
+python function_agent.py
 ```
 
 # Details:
