@@ -62,8 +62,6 @@ python function_agent.py
 | Gemini-Flash-2.0| 0.470| 25.219 | 0.401 | 0.873 |
 | GPT-4.1 nano   | 0.460 | 25.515 | 0.401 | 0.874 |
 
-## Example
-
 
 ## Example
 
