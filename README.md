@@ -65,6 +65,9 @@ python function_agent.py
 
 ## Example
 
+We show and example of our how our method refines the predictions for
+a protein:
+
 <details>
 <summary>Metadata retrieval</summary>
 Before creating an agent, we retrieve information from UniProtKB and
