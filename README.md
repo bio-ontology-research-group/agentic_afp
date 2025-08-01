@@ -1,4 +1,4 @@
-# Multi-agent protein function prediction
+# LLM agent-based protein function prediction
 
 <div align="center">
 <img src="figs/architecture.png" alt="Alt text" width="500">
