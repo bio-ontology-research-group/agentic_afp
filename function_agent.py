@@ -2,6 +2,7 @@ import os
 import sys
 import pandas as pd
 import numpy as np
+import click as ck
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from camel.models import ModelFactory
@@ -10,7 +11,7 @@ from camel.agents import ChatAgent
 from camel.toolkits import FunctionTool
 from collections import Counter
 
-from agents.models import gemini_model
+from agents.models import gemini_model, gpt_model
 from typing import List, Tuple
 from src.ontology import Ontology
 from tqdm import tqdm
@@ -33,9 +34,16 @@ class GOTerm():
 
 
 class ProteinAgent(ChatAgent):
-    def __init__(self, ontology, ont, terms_dict, data_row, *args, **kwargs):
+    def __init__(self, model_name, ontology, ont, terms_dict, data_row, *args, **kwargs):
         if not isinstance(data_row, pd.Series):
             raise ValueError(f"data_row must be a pandas Series object. Got {type(data_row)} instead.")
+        if model_name == 'gemini':
+            model=gemini_model
+        elif model_name == 'gpt':
+            model=gpt_model
+        else:
+            raise ValueError(f"model_name must be either 'gemini' or 'gpt'. Got {model_name} instead.")
+        
         self.ont = ont
         self.go = ontology
         self.data_row = data_row
@@ -82,7 +90,7 @@ based on the information you have access to.  """
                                 taxon_constraints_tool,
                                 update_tool,
                                 get_go_term_info_tool],
-                         model=gemini_model,
+                         model=model,
                          **kwargs)
 
     def get_interpro_annotations(self) -> list:
@@ -217,8 +225,8 @@ def load_initial_predictions():
     return df
 
 
-def update_predictions(go, ont, terms, terms_dict, data_row) -> str:
-    protein_agent = ProteinAgent(go, ont, terms_dict, data_row)
+def update_predictions(model_name, go, ont, terms, terms_dict, data_row) -> str:
+    protein_agent = ProteinAgent(model_name, go, ont, terms_dict, data_row)
     go_terms = []
     for i, score in enumerate(data_row[f'{ont}_preds']):
         if score >= 0.1:
@@ -242,25 +250,41 @@ scores. Perform the update and also provide a rationale for each
 change. If no changes are needed, return 'No changes needed'.  """
     protein_agent.step(updating_prompt)
 
-def main():
+@ck.command()
+@ck.option('--run_number', type=int, default=0, help='Run number for output file naming.')
+@ck.option('--model_name', type=ck.Choice(['gemini', 'gpt']), default='gemini', help='Model name to use for the agent.')
+def main(run_number, model_name):
+    print(f"Running refinement with model {model_name} for run number {run_number}")
     df = load_initial_predictions()
     go = Ontology('data/go.obo', with_rels=True)
     for ont in ['mf', 'cc', 'bp']:
         terms_df = pd.read_pickle(f'data/{ont}_terms.pkl')
-        terms = terms_df['terms']
+        terms = terms_df['terms'].values.tolist()
         terms_dict = {v:k for k, v in enumerate(terms)}
+        skipped = 0
         for i in tqdm(range(len(df))):
             try:
                 row = df.iloc[i]
+                prop_annotations = row['prop_annotations']
+                terms_in_ont = [t for t in prop_annotations if t in terms]
+                if len(terms_in_ont) == 0:
+                    print(f"Skipping protein {i} as it has no prop_annotations in {ont}")
+                    skipped += 1
+                    continue
+                
                 old_preds = row[f'{ont}_preds'].copy()
-                update_predictions(go, ont, terms, terms_dict, row)
+                update_predictions(model_name, go, ont, terms, terms_dict, row)
                 new_preds = row[f'{ont}_preds']
                 c = np.sum(old_preds != new_preds)
                 print('Updated:', c)
             except Exception as e:
                 print(f"Error processing protein {i}: {e}")
+
             
-    df.to_pickle('data/test_predictions_refined.pkl')
+        processed = len(df) - skipped
+        print(f"Processed {processed} proteins for ontology {ont}. Skipped {skipped} proteins.")
+                
+    df.to_pickle(f'data/test_predictions_refined_{model_name}_run{run_number}.pkl', protocol=4)
 
 if __name__ == "__main__":
     main()

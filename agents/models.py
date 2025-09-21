@@ -20,12 +20,10 @@ gemini_model = ModelFactory.create(
     model_config_dict={"temperature": 0.3, "max_tokens": 400000},
 )
 
-# model = ModelFactory.create(
-    # model_platform=ModelPlatformType.OPENROUTER,
-    # model_type="deepseek/deepseek-chat-v3-0324:free",
-    # model_type="meta-llama/llama-3.3-8b-instruct:free",
-    # model_type="google/gemini-2.0-flash-001",
-    # api_key=OPENROUTER_API_KEY,
-    # model_config_dict={"temperature": 0.3, "max_tokens": 140000},
-# )
+gpt_model = ModelFactory.create(
+    model_platform=ModelPlatformType.OPENROUTER,
+    model_type="openai/gpt-4.1-nano",
+    api_key=OPENROUTER_API_KEY,
+    model_config_dict={"temperature": 0.3, "max_tokens": 1000000},
+)
 

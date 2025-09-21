@@ -1,3 +1,4 @@
+import sys
 from functools import partial
 import pandas as pd
 from tqdm import tqdm
@@ -48,13 +49,21 @@ def main(data_root, model_name, ont):
     test_df.to_pickle(out_file)
 
 if __name__ == "__main__":
+    if len(sys.argv) < 3:
+        print("Usage: python propagate_annotations.py <run_number> <model_name>")
+        sys.exit()
+
+    run_number = sys.argv[1]
+    model_name_arg = sys.argv[2]
     data_root = "data"
-    model_name = "refined"
+    model_name = f"refined_{model_name_arg}_run{run_number}"
     run = ""
     go = Ontology(f"{data_root}/go.obo")
 
-    ont = 'bp'
-    terms = pd.read_pickle(f'{data_root}/{ont}_terms.pkl')['terms'].values.flatten()
-    terms_dict = {v: i for i, v in enumerate(terms)}
-    main(data_root, model_name, ont)
+    onts = ['mf', 'bp', 'cc']
+
+    for ont in onts:
+        terms = pd.read_pickle(f'{data_root}/{ont}_terms.pkl')['terms'].values.flatten()
+        terms_dict = {v: i for i, v in enumerate(terms)}
+        main(data_root, model_name, ont)
     
