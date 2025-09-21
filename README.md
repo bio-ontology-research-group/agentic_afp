@@ -1,7 +1,7 @@
 # LLM agent-based protein function prediction
 
 <div align="center">
-<img src="figs/agent_workflow.png" alt="Alt text" width="500">
+<img src="figs/agent_workflow_dark_bak.png" alt="Alt text" width="500">
 </div>
 
 ## Requirements
