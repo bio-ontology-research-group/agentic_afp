@@ -1,7 +1,7 @@
 # LLM agent-based protein function prediction
 
 <div align="center">
-<img src="figs/architecture.png" alt="Alt text" width="500">
+<img src="figs/agent_workflow.png" alt="Alt text" width="500">
 </div>
 
 ## Requirements
@@ -20,48 +20,30 @@ conda activate agenticfp
 
 ## Usage
 
-Initially, we introduce a ProteinCentricAgent, which takes initial GO
-function predictions and looks for potential overlooked terms to
-refine its predictions. It relies on sources such as InterPro and
-Diamond. It uses text descriptions of proteins and GO terms.
+We used OpenRouter. Before running the scripts, set up the OpenRouter API key as follows:
 
-To run:
-
-```bash
-python function_agent.py
+```
+export OPENROUTER_API_KEY=<your openrouter api key>
 ```
 
-# Details:
+Now, you can run the agent with the following command:
 
-* Model used: `google/gemini-2.0-flash-001`
-* Protein agent is at: `agents/protein_centric_agent.py`
+```bash
+python function_agent.py --run_number 0 --model_name gemini
+```
 
-# Preliminary results:
+- We used the parameter `run_number` to analyze performance variance. You can safely ignore it since the default is 0.
+- Models options are: `gemini` and `gpt`.
 
-## Molecular Function (MF) 
-| Prediction Type | Fmax  | Smin  | AUPR  | AUC   |
-|----------------|-------|-------|-------|-------|
-| Initial (MLP)  | 0.642 | 7.364 | 0.642 | 0.957 |
-| MLP+DS         | 0.706 | 6.177 | 0.712 | 0.964 |
-| Gemini-Flash-2.0| 0.717| 5.861 | 0.697 | 0.943 |
-| GPT-4.1 nano   | 0.712 | 6.173 | 0.713 | 0.964 |
 
-## Cellular Component (CC) 
-| Prediction Type | Fmax  | Smin  | AUPR  | AUC   |
-|----------------|-------|-------|-------|-------|
-| Initial (MLP)  | 0.693 | 7.530 | 0.723 | 0.936 |
-| MLP+DS         | 0.718 | 6.365 | 0.755 | 0.949 |
-| Gemini-Flash-2.0| 0.718| 6.554 | 0.717 | 0.944 |
-| GPT-4.1 nano   | 0.727 | 6.333 | 0.748 | 0.949 |
+After running, we need to propagate annotations from more specific classes to more general ones. And then evaluate :smile:.
 
-## Biological Process (BP)
-| Prediction Type | Fmax  | Smin   | AUPR  | AUC   |
-|----------------|-------|--------|-------|-------|
-| Initial (MLP)  | 0.414 | 27.440 | 0.354 | 0.868 |
-| MLP+DS         | 0.463 | 25.495 | 0.402 | 0.874 |
-| Gemini-Flash-2.0| 0.470| 25.219 | 0.401 | 0.873 |
-| GPT-4.1 nano   | 0.460 | 25.515 | 0.401 | 0.874 |
+```bash
+python propagate_annotations.py 0 gemini
+python evaluate_all.py 0 gemini
+```
 
+- Make sure you use the same `run_number` and `model_name` parameters you used for the `function_agent.py` script.
 
 ## Example
 
@@ -108,11 +90,3 @@ Then, we instruct the agent to analyze the GO terms and suggest refinements of p
 </div>
 </details>
 
-# Data
-
-We extend the `test.pkl` file with diamond predictions and uniprot text information run:
-
-```
-python diamond_preds.py
-python get_protein_uniprot_info.py
-```
