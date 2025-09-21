@@ -22,7 +22,7 @@ logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO)
 def test(data_root, model, run, combine, alpha, tex_output, wandb_logger, rows=None):
     train_data_file = f'{data_root}/train_data.pkl'
     valid_data_file = f'{data_root}/valid_data.pkl'
-    test_data_file = f'{data_root}/predictions_{model}_{run}.pkl'
+    test_data_file = f'{data_root}/test_predictions_{model}.pkl'
     test_data_file = test_data_file.replace('_.pkl', f'.pkl')
     if combine:
         diam_data_file = f'{data_root}/time_data_diam.pkl'
@@ -293,10 +293,10 @@ if __name__ == '__main__':
     combine = False
     alpha = 0.5
     tex_output = False
-    rows = 30
+    rows = None
     wandb_logger = FakeLogger() # Replace with actual wandb logger if needed
-    test(data_root, "mlp", "1", combine, alpha, tex_output, wandb_logger, rows=rows)
-    test(data_root, "refined", "", combine, alpha, tex_output, wandb_logger, rows=rows)
+    test(data_root, "abstracts", "", combine, alpha, tex_output, wandb_logger, rows=rows)
+    test(data_root, "refined_run0", "", combine, alpha, tex_output, wandb_logger, rows=rows)
     test(data_root, "refined_propagated", "", combine, alpha, tex_output, wandb_logger, rows=rows)
     
     
